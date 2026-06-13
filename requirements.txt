@@ -1,0 +1,7 @@
+# Stage 1 (engine, baselines, evaluation harness) runs on the standard library
+# only -- nothing to install. The dependencies below are for later stages and
+# are commented out until they are actually used.
+
+# torch        # learning agent
+# numpy        # array handling / features
+# matplotlib   # training-curve plot for the README

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Model checkpoints and training artifacts (kept out of the repo on purpose)
+*.pt
+*.pth
+*.pkl
+*.ckpt
+*.npz
+checkpoints/
+runs/
+logs/
+wandb/
+
+# OS
+.DS_Store
+Thumbs.db
