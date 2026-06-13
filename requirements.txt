@@ -1,7 +1,11 @@
-# Stage 1 (engine, baselines, evaluation harness) runs on the standard library
-# only -- nothing to install. The dependencies below are for later stages and
-# are commented out until they are actually used.
+# The engine, baselines, and solver (Stages 1 and 3a) use only the standard
+# library. The learning agent (Stage 3b) adds the two below.
+#
+# Tested with Python 3.14 on Windows: numpy 2.4.6, torch 2.12.0 (CPU build).
+# The network is small, so the CPU build is plenty. For an NVIDIA GPU, install a
+# CUDA build instead from https://download.pytorch.org/whl (not required here).
 
-# torch        # learning agent
-# numpy        # array handling / features
-# matplotlib   # training-curve plot for the README
+numpy
+torch
+
+# matplotlib   # added when we reach the training-curve plot
