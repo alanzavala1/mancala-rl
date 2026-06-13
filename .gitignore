@@ -7,6 +7,13 @@ __pycache__/
 venv/
 env/
 
+# Compiled C artifacts (the .c source is committed; built binaries are not)
+*.dll
+*.o
+*.obj
+*.exe
+*.so
+
 # Model checkpoints and training artifacts (kept out of the repo on purpose)
 *.pt
 *.pth
