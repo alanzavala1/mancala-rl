@@ -13,7 +13,7 @@ Deliberately small: the game is tiny, so two hidden layers is plenty.
 import torch
 import torch.nn as nn
 
-from . import features
+from . import engine, features
 
 
 def default_device():
@@ -44,3 +44,27 @@ def encode_batch(states, device):
     """Encode a list of states into a (len(states), 14) float tensor."""
     rows = [features.encode(s) for s in states]
     return torch.tensor(rows, dtype=torch.float32, device=device)
+
+
+class PolicyBot:
+    """Plays the network's policy head directly -- one forward pass, no search.
+
+    The lightest possible agent. Because the policy head was trained to imitate
+    the MCTS visit distribution, this measures how much of the search's
+    conclusions the network internalized ("distilled") into a single forward
+    pass. Strength here is strength you get for ~microseconds and a few KB.
+    """
+
+    name = "Policy"
+
+    def __init__(self, net, device=None):
+        self.net = net
+        self.device = device or torch.device("cpu")
+
+    def act(self, state, rng):
+        legal = engine.legal_moves(state)
+        with torch.no_grad():
+            logits, _ = self.net(encode_batch([state], self.device))
+        logits = logits[0]
+        best = max(float(logits[a]) for a in legal)          # highest-scoring legal move
+        return rng.choice([a for a in legal if float(logits[a]) == best])

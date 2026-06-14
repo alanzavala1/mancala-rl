@@ -98,7 +98,7 @@ class MCTS:
 
     def _select(self, node):
         total = sum(node.N.values())
-        sqrt_total = math.sqrt(total)
+        sqrt_total = math.sqrt(total + 1)   # +1 so the prior guides the first visit too
         best_a, best_score = node.legal[0], -1e30
         for a in node.legal:
             n = node.N[a]
