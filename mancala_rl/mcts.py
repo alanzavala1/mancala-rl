@@ -112,7 +112,8 @@ class MCTS:
     def _add_dirichlet_noise(self, root):
         import numpy as np
         legal = root.legal
-        noise = np.random.default_rng().dirichlet([self.dirichlet_alpha] * len(legal))
+        # np.random (not default_rng) so np.random.seed in training is reproducible
+        noise = np.random.dirichlet([self.dirichlet_alpha] * len(legal))
         f = self.dirichlet_frac
         for a, e in zip(legal, noise):
             root.P[a] = (1 - f) * root.P[a] + f * float(e)
