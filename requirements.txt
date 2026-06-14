@@ -1,9 +1,10 @@
 # The engine, baselines, and solver (Stages 1 and 3a) use only the standard
 # library. The learning agent (Stage 3b) adds the two below.
 #
-# Tested with Python 3.14 on Windows: numpy 2.4.6, torch 2.12.0 (CPU build).
-# The network is small, so the CPU build is plenty. For an NVIDIA GPU, install a
-# CUDA build instead from https://download.pytorch.org/whl (not required here).
+# Tested with Python 3.14 on Windows: numpy 2.4.6, torch 2.11.0+cu128 (GPU).
+# A plain `pip install torch` gives the CPU build (the net is small, so that is
+# fine). For an NVIDIA GPU -- e.g. an RTX 5080, which needs CUDA 12.8 -- use:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
 
 numpy
 torch
