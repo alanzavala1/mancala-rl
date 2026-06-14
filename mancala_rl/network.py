@@ -22,14 +22,12 @@ def default_device():
 
 
 class MancalaNet(nn.Module):
-    def __init__(self, hidden=128):
+    def __init__(self, hidden=256, layers=3):
         super().__init__()
-        self.body = nn.Sequential(
-            nn.Linear(features.NUM_FEATURES, hidden),
-            nn.ReLU(),
-            nn.Linear(hidden, hidden),
-            nn.ReLU(),
-        )
+        body = [nn.Linear(features.NUM_FEATURES, hidden), nn.ReLU()]
+        for _ in range(layers - 1):
+            body += [nn.Linear(hidden, hidden), nn.ReLU()]
+        self.body = nn.Sequential(*body)
         self.policy_head = nn.Linear(hidden, features.NUM_ACTIONS)
         self.value_head = nn.Linear(hidden, 1)
 

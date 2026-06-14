@@ -1,28 +1,30 @@
-"""Train the AlphaZero-style agent by self-play (gate-less, save-best, fast loop).
+"""Train the AlphaZero-style agent by self-play (pure self-play, multi-core, save-best).
 
-Most iterations are just self-play + train + save the latest network -- cheap.
-Every --eval-every iterations we measure the real signal (a seat-split vs the
-solver, plus the saturated baselines for the curve) and save best.pt whenever
-the solver score improves, so drift can't discard a good network. Skipping the
-per-iteration baseline evals roughly halves iteration time.
+Pure self-play -- the network only ever learns from games against itself, no
+external opponents in the training data. Speed comes from running self-play
+across CPU cores (--workers); the GPU doesn't help a network this small.
 
-Designed around the diagnosis of the earlier run: the agent only learns from
-self-play (so it under-learns defense vs a stronger opponent), the deterministic
-eval makes the solver score noisy, and saving only the latest net loses peaks.
+Each iteration: self-play (parallel) -> replay buffer -> train. Every
+--eval-every iterations: measure the real signal (a seat-split vs the solver,
+plus the saturated baselines for the curve) and save best.pt whenever the solver
+score improves, so gate-less drift can't discard a good network.
 
 Run:
-    .venv\\Scripts\\python scripts/train.py --iterations 250 --sims 256 --eval-every 10 --out runs2
+    .venv\\Scripts\\python scripts/train.py --iterations 400 --sims 256 --workers 8 --out runs3
 
 Outputs (under --out): champion.pt (latest), best.pt (best vs solver), training_log.csv.
 """
 
 import argparse
 import csv
+import multiprocessing as mp
+import os
 import pathlib
 import random
 import sys
 import time
 from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -51,20 +53,22 @@ def solver_seatsplit(agent, depth, n, seed):
 def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--iterations", type=int, default=250)
-    p.add_argument("--games", type=int, default=30)
+    p.add_argument("--iterations", type=int, default=300)
+    p.add_argument("--games", type=int, default=32)
     p.add_argument("--sims", type=int, default=256)
+    p.add_argument("--workers", type=int, default=min(os.cpu_count() or 1, 8),
+                   help="self-play worker processes (1 = serial)")
     p.add_argument("--train-steps", type=int, default=300)
     p.add_argument("--batch", type=int, default=256)
-    p.add_argument("--buffer", type=int, default=50000)
+    p.add_argument("--buffer", type=int, default=60000)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--random-opening", type=int, default=8)
     p.add_argument("--temp-moves", type=int, default=12)
     p.add_argument("--dirichlet", type=float, default=0.3)
-    p.add_argument("--eval-every", type=int, default=10, help="full eval + save-best cadence")
-    p.add_argument("--eval-games", type=int, default=30, help="baseline games per eval")
+    p.add_argument("--eval-every", type=int, default=10)
+    p.add_argument("--eval-games", type=int, default=30)
     p.add_argument("--solver-depth", type=int, default=8)
-    p.add_argument("--solver-games", type=int, default=40, help="solver games per seat per eval")
+    p.add_argument("--solver-games", type=int, default=40)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cpu")
     p.add_argument("--out", default="runs")
@@ -88,57 +92,73 @@ def main():
     buffer = deque(maxlen=args.buffer)
     best_score = -1
 
+    use_pool = args.workers and args.workers > 1
+    executor = ProcessPoolExecutor(
+        max_workers=args.workers, mp_context=mp.get_context("spawn")) if use_pool else None
+
     print(f"device={device}  iterations={args.iterations}  games/iter={args.games}  "
-          f"sims={args.sims}  eval-every={args.eval_every}\n", flush=True)
+          f"sims={args.sims}  workers={args.workers if use_pool else 1}\n", flush=True)
 
-    for it in range(1, args.iterations + 1):
-        t0 = time.perf_counter()
+    try:
+        for it in range(1, args.iterations + 1):
+            t0 = time.perf_counter()
 
-        net.eval()
-        sp_mcts = MCTS(net, device, n_simulations=args.sims, dirichlet_alpha=args.dirichlet)
-        buffer.extend(selfplay.generate(
-            sp_mcts, n_games=args.games, rng=random.Random(args.seed + it),
-            temperature_moves=args.temp_moves, random_opening=args.random_opening))
+            net.eval()
+            if use_pool:
+                state_dict = {k: v.detach().cpu() for k, v in net.state_dict().items()}
+                examples = selfplay.generate_parallel(
+                    executor, state_dict, args.games, args.workers, args.sims,
+                    args.dirichlet, args.temp_moves, args.random_opening, args.seed + it)
+            else:
+                sp_mcts = MCTS(net, device, n_simulations=args.sims,
+                               dirichlet_alpha=args.dirichlet)
+                examples = selfplay.generate(
+                    sp_mcts, n_games=args.games, rng=random.Random(args.seed + it),
+                    temperature_moves=args.temp_moves, random_opening=args.random_opening)
+            buffer.extend(examples)
 
-        net.train()
-        buf_list = list(buffer)
-        losses = []
-        for _ in range(args.train_steps):
-            batch = random.sample(buf_list, min(len(buf_list), args.batch))
-            losses.append(train_step(net, opt, batch, device)[0])
-        avg_loss = sum(losses) / len(losses)
-        net.eval()
-        torch.save(net.state_dict(), out / "champion.pt")   # latest
+            net.train()
+            buf_list = list(buffer)
+            losses = []
+            for _ in range(args.train_steps):
+                batch = random.sample(buf_list, min(len(buf_list), args.batch))
+                losses.append(train_step(net, opt, batch, device)[0])
+            avg_loss = sum(losses) / len(losses)
+            net.eval()
+            torch.save(net.state_dict(), out / "champion.pt")
 
-        do_eval = (it % args.eval_every == 0) or (it == args.iterations)
-        if do_eval:
-            agent = MCTSBot(net, device, args.sims)
-            vr = evaluate(agent, RandomBot(), n_games=args.eval_games,
-                          seed=args.seed + 2000 + it).score
-            vg = evaluate(agent, GreedyBot(), n_games=args.eval_games,
-                          seed=args.seed + 3000 + it).score
-            sf, ss = solver_seatsplit(agent, args.solver_depth, args.solver_games,
-                                      args.seed + 4000 + it)
-            score = sf + ss
-            new_best = score > best_score
-            if new_best:
-                best_score = score
-                torch.save(net.state_dict(), out / "best.pt")
-            dt = time.perf_counter() - t0
-            n = args.solver_games
-            print(f"iter {it:3d} | loss {avg_loss:5.3f} | vs R {vr:4.0%} G {vg:4.0%} | "
-                  f"solver(d{args.solver_depth}) first {sf:2d}/{n} second {ss:2d}/{n}"
-                  f"{'  << NEW BEST' if new_best else ''} | {dt:4.0f}s", flush=True)
-            with open(csv_path, "a", newline="") as f:
-                csv.writer(f).writerow(
-                    [it, len(buffer), f"{avg_loss:.4f}", f"{vr:.3f}", f"{vg:.3f}",
-                     sf, ss, int(new_best), f"{dt:.1f}"])
-        else:
-            dt = time.perf_counter() - t0
-            print(f"iter {it:3d} | loss {avg_loss:5.3f} | {dt:4.0f}s", flush=True)
-            with open(csv_path, "a", newline="") as f:
-                csv.writer(f).writerow(
-                    [it, len(buffer), f"{avg_loss:.4f}", "", "", "", "", "", f"{dt:.1f}"])
+            do_eval = (it % args.eval_every == 0) or (it == args.iterations)
+            if do_eval:
+                agent = MCTSBot(net, device, args.sims)
+                vr = evaluate(agent, RandomBot(), n_games=args.eval_games,
+                              seed=args.seed + 2000 + it).score
+                vg = evaluate(agent, GreedyBot(), n_games=args.eval_games,
+                              seed=args.seed + 3000 + it).score
+                sf, ss = solver_seatsplit(agent, args.solver_depth, args.solver_games,
+                                          args.seed + 4000 + it)
+                score = sf + ss
+                new_best = score > best_score
+                if new_best:
+                    best_score = score
+                    torch.save(net.state_dict(), out / "best.pt")
+                dt = time.perf_counter() - t0
+                n = args.solver_games
+                print(f"iter {it:3d} | loss {avg_loss:5.3f} | vs R {vr:4.0%} G {vg:4.0%} | "
+                      f"solver(d{args.solver_depth}) first {sf:2d}/{n} second {ss:2d}/{n}"
+                      f"{'  << NEW BEST' if new_best else ''} | {dt:4.0f}s", flush=True)
+                with open(csv_path, "a", newline="") as f:
+                    csv.writer(f).writerow(
+                        [it, len(buffer), f"{avg_loss:.4f}", f"{vr:.3f}", f"{vg:.3f}",
+                         sf, ss, int(new_best), f"{dt:.1f}"])
+            else:
+                dt = time.perf_counter() - t0
+                print(f"iter {it:3d} | loss {avg_loss:5.3f} | {dt:4.0f}s", flush=True)
+                with open(csv_path, "a", newline="") as f:
+                    csv.writer(f).writerow(
+                        [it, len(buffer), f"{avg_loss:.4f}", "", "", "", "", "", f"{dt:.1f}"])
+    finally:
+        if executor is not None:
+            executor.shutdown()
 
     print(f"\ndone. latest -> {out/'champion.pt'} ; best vs solver -> {out/'best.pt'} "
           f"(score {best_score}/{2*args.solver_games}) ; log -> {csv_path}", flush=True)
