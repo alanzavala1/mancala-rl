@@ -34,6 +34,8 @@ def main():
     p.add_argument("--games", type=int, default=40, help="games per seat per depth")
     p.add_argument("--sims", type=int, default=100)
     p.add_argument("--depths", type=int, nargs="+", default=[4, 6, 8, 10, 12])
+    p.add_argument("--opening-plies", type=int, default=6,
+                   help="random opening moves per game, to vary otherwise-identical matches")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cpu")
     args = p.parse_args()
@@ -50,10 +52,11 @@ def main():
     for d in args.depths:
         solver = CSolverBot(depth=d)
         t0 = time.perf_counter()
+        op = args.opening_plies
         rng = random.Random(args.seed)
-        first = sum(1 for _ in range(n) if play_game(agent, solver, rng) == 1)
+        first = sum(1 for _ in range(n) if play_game(agent, solver, rng, opening_plies=op) == 1)
         rng = random.Random(args.seed + 1)
-        second = sum(1 for _ in range(n) if play_game(solver, agent, rng) == 2)
+        second = sum(1 for _ in range(n) if play_game(solver, agent, rng, opening_plies=op) == 2)
         dt = time.perf_counter() - t0
         print(f"  {d:>5} {f'{first}/{n}':>14} {f'{second}/{n}':>14} {f'{dt:.0f}s':>8}",
               flush=True)

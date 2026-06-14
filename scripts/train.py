@@ -40,13 +40,17 @@ from mancala_rl.bots import RandomBot, GreedyBot
 from mancala_rl.csolver import CSolverBot
 
 
-def solver_seatsplit(agent, depth, n, seed):
-    """(agent wins as first player, agent wins as second player) vs solver."""
+def solver_seatsplit(agent, depth, n, seed, opening_plies=6):
+    """(agent wins as first player, agent wins as second player) vs solver.
+
+    opening_plies random opening moves vary each game so the metric isn't a
+    near-binary replay of one deterministic line.
+    """
     solver = CSolverBot(depth=depth)
     rng = random.Random(seed)
-    first = sum(1 for _ in range(n) if play_game(agent, solver, rng) == 1)
+    first = sum(1 for _ in range(n) if play_game(agent, solver, rng, opening_plies=opening_plies) == 1)
     rng = random.Random(seed + 1)
-    second = sum(1 for _ in range(n) if play_game(solver, agent, rng) == 2)
+    second = sum(1 for _ in range(n) if play_game(solver, agent, rng, opening_plies=opening_plies) == 2)
     return first, second
 
 

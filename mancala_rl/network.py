@@ -22,7 +22,7 @@ def default_device():
 
 
 class MancalaNet(nn.Module):
-    def __init__(self, hidden=256, layers=3):
+    def __init__(self, hidden=128, layers=2):
         super().__init__()
         body = [nn.Linear(features.NUM_FEATURES, hidden), nn.ReLU()]
         for _ in range(layers - 1):

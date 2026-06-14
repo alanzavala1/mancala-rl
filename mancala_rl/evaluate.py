@@ -61,13 +61,20 @@ def wilson_interval(wins, n, z=1.96):
     return (center - margin, center + margin)
 
 
-def play_game(agent_p1, agent_p2, rng, max_turns=1000):
+def play_game(agent_p1, agent_p2, rng, max_turns=1000, opening_plies=0):
     """Play one game. agent_p1 is player 1, agent_p2 is player 2.
 
     Returns the winner: 1, 2, or 0 for a tie. max_turns is a safety guard; if
-    it is ever hit the game is scored by the current store totals.
+    it is ever hit the game is scored by the current store totals. opening_plies
+    random moves are played first (un-scored) to vary the start -- this de-noises
+    matches between two deterministic players (e.g. agent vs solver), which would
+    otherwise replay essentially the same game every time.
     """
     state = engine.reset(first_player=1)
+    for _ in range(opening_plies):
+        state, _, done, info = engine.step(state, rng.choice(engine.legal_moves(state)))
+        if done:
+            return info['winner']
     agents = {1: agent_p1, 2: agent_p2}
     for _ in range(max_turns):
         action = agents[state.current_player].act(state, rng)
