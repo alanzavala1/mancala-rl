@@ -32,7 +32,7 @@ import numpy as np
 import torch
 
 from mancala_rl import selfplay
-from mancala_rl.network import MancalaNet
+from mancala_rl.network import MancalaNet, save_net
 from mancala_rl.mcts import MCTS, MCTSBot
 from mancala_rl.training import train_step
 from mancala_rl.evaluate import evaluate, play_game
@@ -60,6 +60,8 @@ def main():
     p.add_argument("--iterations", type=int, default=300)
     p.add_argument("--games", type=int, default=32)
     p.add_argument("--sims", type=int, default=256)
+    p.add_argument("--hidden", type=int, default=128, help="network width")
+    p.add_argument("--layers", type=int, default=2, help="number of hidden layers")
     p.add_argument("--workers", type=int, default=min(os.cpu_count() or 1, 8),
                    help="self-play worker processes (1 = serial)")
     p.add_argument("--train-steps", type=int, default=300)
@@ -91,7 +93,7 @@ def main():
             ["iteration", "buffer", "loss", "vs_random", "vs_greedy",
              "solver_first", "solver_second", "best", "seconds"])
 
-    net = MancalaNet().to(device)
+    net = MancalaNet(hidden=args.hidden, layers=args.layers).to(device)
     opt = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-4)
     buffer = deque(maxlen=args.buffer)
     best_score = -1
@@ -111,8 +113,9 @@ def main():
             if use_pool:
                 state_dict = {k: v.detach().cpu() for k, v in net.state_dict().items()}
                 examples = selfplay.generate_parallel(
-                    executor, state_dict, args.games, args.workers, args.sims,
-                    args.dirichlet, args.temp_moves, args.random_opening, args.seed + it)
+                    executor, state_dict, net.hidden, net.layers, args.games, args.workers,
+                    args.sims, args.dirichlet, args.temp_moves, args.random_opening,
+                    args.seed + it)
             else:
                 sp_mcts = MCTS(net, device, n_simulations=args.sims,
                                dirichlet_alpha=args.dirichlet)
@@ -129,7 +132,7 @@ def main():
                 losses.append(train_step(net, opt, batch, device)[0])
             avg_loss = sum(losses) / len(losses)
             net.eval()
-            torch.save(net.state_dict(), out / "champion.pt")
+            save_net(net, out / "champion.pt")
 
             do_eval = (it % args.eval_every == 0) or (it == args.iterations)
             if do_eval:
@@ -144,7 +147,7 @@ def main():
                 new_best = score > best_score
                 if new_best:
                     best_score = score
-                    torch.save(net.state_dict(), out / "best.pt")
+                    save_net(net, out / "best.pt")
                 dt = time.perf_counter() - t0
                 n = args.solver_games
                 print(f"iter {it:3d} | loss {avg_loss:5.3f} | vs R {vr:4.0%} G {vg:4.0%} | "

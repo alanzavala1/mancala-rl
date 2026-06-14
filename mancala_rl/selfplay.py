@@ -99,13 +99,14 @@ def _selfplay_worker(payload):
     from .network import MancalaNet
     from .mcts import MCTS
 
-    state_dict, n_games, sims, dirichlet, temp_moves, random_opening, seed = payload
+    (state_dict, hidden, layers, n_games, sims, dirichlet,
+     temp_moves, random_opening, seed) = payload
     _torch.set_num_threads(1)            # one thread per worker; parallelism is by process
     _random.seed(seed)
     _np.random.seed(seed % (2 ** 32 - 1))
     _torch.manual_seed(seed)
 
-    net = MancalaNet()
+    net = MancalaNet(hidden=hidden, layers=layers)
     net.load_state_dict(state_dict)
     net.eval()
     mcts = MCTS(net, _torch.device("cpu"), n_simulations=sims, dirichlet_alpha=dirichlet)
@@ -113,16 +114,16 @@ def _selfplay_worker(payload):
                     temperature_moves=temp_moves, random_opening=random_opening)
 
 
-def generate_parallel(executor, state_dict, n_games, n_workers, sims, dirichlet,
-                      temp_moves, random_opening, base_seed):
+def generate_parallel(executor, state_dict, hidden, layers, n_games, n_workers, sims,
+                      dirichlet, temp_moves, random_opening, base_seed):
     """Self-play spread across worker processes via a ProcessPoolExecutor.
 
     state_dict must hold CPU tensors. Returns all examples concatenated.
     """
     per = [n_games // n_workers + (1 if i < n_games % n_workers else 0)
            for i in range(n_workers)]
-    payloads = [(state_dict, per[i], sims, dirichlet, temp_moves, random_opening,
-                 base_seed * 100003 + i * 7919)
+    payloads = [(state_dict, hidden, layers, per[i], sims, dirichlet, temp_moves,
+                 random_opening, base_seed * 100003 + i * 7919)
                 for i in range(n_workers) if per[i] > 0]
     examples = []
     for chunk in executor.map(_selfplay_worker, payloads):

@@ -24,6 +24,8 @@ def default_device():
 class MancalaNet(nn.Module):
     def __init__(self, hidden=128, layers=2):
         super().__init__()
+        self.hidden = hidden
+        self.layers = layers
         body = [nn.Linear(features.NUM_FEATURES, hidden), nn.ReLU()]
         for _ in range(layers - 1):
             body += [nn.Linear(hidden, hidden), nn.ReLU()]
@@ -44,6 +46,25 @@ def encode_batch(states, device):
     """Encode a list of states into a (len(states), 14) float tensor."""
     rows = [features.encode(s) for s in states]
     return torch.tensor(rows, dtype=torch.float32, device=device)
+
+
+def save_net(net, path):
+    """Save weights AND the network's shape, so it can be reloaded at any size."""
+    torch.save({"state_dict": net.state_dict(), "hidden": net.hidden,
+                "layers": net.layers}, path)
+
+
+def load_net(path, device="cpu"):
+    """Load a network, reading its shape from the checkpoint. Falls back to the
+    default 128x2 for legacy checkpoints that stored only a raw state_dict."""
+    blob = torch.load(path, map_location=device)
+    if isinstance(blob, dict) and "state_dict" in blob:
+        net = MancalaNet(hidden=blob["hidden"], layers=blob["layers"])
+        net.load_state_dict(blob["state_dict"])
+    else:
+        net = MancalaNet()                         # legacy raw state_dict (128x2)
+        net.load_state_dict(blob)
+    return net.to(device).eval()
 
 
 class PolicyBot:

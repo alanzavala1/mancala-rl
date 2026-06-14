@@ -16,20 +16,16 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 import torch
 import torch.nn as nn
 
-from mancala_rl.network import MancalaNet
+from mancala_rl.network import load_net
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--champion", default="runs_final/best.pt")
-    p.add_argument("--hidden", type=int, default=128)
-    p.add_argument("--layers", type=int, default=2)
     p.add_argument("--out", default="cnn/policy_weights.h")
     args = p.parse_args()
 
-    net = MancalaNet(hidden=args.hidden, layers=args.layers)
-    net.load_state_dict(torch.load(args.champion, map_location="cpu"))
-    net.eval()
+    net = load_net(args.champion)            # shape read from the checkpoint
 
     # The PolicyBot forward path: the hidden Linear layers (each followed by a
     # ReLU) then the policy head (no activation). The value head is unused.

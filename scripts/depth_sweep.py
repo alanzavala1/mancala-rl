@@ -21,7 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 import random
 import torch
 
-from mancala_rl.network import MancalaNet
+from mancala_rl.network import load_net
 from mancala_rl.mcts import MCTSBot
 from mancala_rl.csolver import CSolverBot
 from mancala_rl.evaluate import play_game
@@ -41,9 +41,7 @@ def main():
     args = p.parse_args()
 
     device = torch.device(args.device)
-    net = MancalaNet().to(device)
-    net.load_state_dict(torch.load(args.champion, map_location=device))
-    net.eval()
+    net = load_net(args.champion, device)
     agent = MCTSBot(net, device, n_simulations=args.sims)
 
     n = args.games

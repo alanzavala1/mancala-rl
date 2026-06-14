@@ -21,7 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from mancala_rl.network import MancalaNet, PolicyBot
+from mancala_rl.network import load_net, PolicyBot
 from mancala_rl.mcts import MCTSBot
 from mancala_rl.bots import RandomBot, GreedyBot
 from mancala_rl.evaluate import evaluate
@@ -52,9 +52,7 @@ def main():
     args = p.parse_args()
 
     device = torch.device("cpu")
-    net = MancalaNet().to(device)
-    net.load_state_dict(torch.load(args.champion, map_location=device))
-    net.eval()
+    net = load_net(args.champion, device)
 
     sims, vs_g, vs_r, lat = [], [], [], []
     print(f"\n{'sims':>5} {'vs Greedy':>10} {'vs Random':>10} {'latency':>12}")

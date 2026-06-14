@@ -15,7 +15,7 @@ import torch
 
 from mancala_rl import engine, cpolicy
 from mancala_rl.features import encode
-from mancala_rl.network import MancalaNet
+from mancala_rl.network import load_net
 
 
 def main():
@@ -23,9 +23,7 @@ def main():
     p.add_argument("--champion", default="runs_final/best.pt")
     args = p.parse_args()
 
-    net = MancalaNet()
-    net.load_state_dict(torch.load(args.champion, map_location="cpu"))
-    net.eval()
+    net = load_net(args.champion)
 
     def py_logits(state):
         with torch.no_grad():
