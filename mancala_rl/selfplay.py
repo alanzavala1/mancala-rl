@@ -24,13 +24,24 @@ from . import engine, features
 from .mcts import visit_counts
 
 
-def play_game(mcts, rng=None, temperature_moves=10, max_plies=400):
+def play_game(mcts, rng=None, temperature_moves=10, random_opening=0, max_plies=400):
     """Play one self-play game.
 
     Returns a list of (features, policy_target, value) examples, one per move.
+    If random_opening > 0, the game starts with up to that many random,
+    *unrecorded* opening moves. This diversifies the starting distribution so the
+    agent is exposed to varied and disadvantaged positions -- the cure for
+    brittleness and for never learning to defend.
     """
     rng = rng or random.Random()
     state = engine.reset(first_player=1)
+
+    for _ in range(rng.randint(0, random_opening)):
+        state, _, done, _ = engine.step(state, rng.choice(engine.legal_moves(state)))
+        if done:                                  # rare: just start over cleanly
+            state = engine.reset(first_player=1)
+            break
+
     history = []   # (features_vec, policy_target, player_to_move)
 
     winner = 0
@@ -70,10 +81,10 @@ def play_game(mcts, rng=None, temperature_moves=10, max_plies=400):
     return examples
 
 
-def generate(mcts, n_games, rng=None, temperature_moves=10):
+def generate(mcts, n_games, rng=None, temperature_moves=10, random_opening=0):
     """Play n_games of self-play; return all examples concatenated."""
     rng = rng or random.Random()
     examples = []
     for _ in range(n_games):
-        examples.extend(play_game(mcts, rng, temperature_moves))
+        examples.extend(play_game(mcts, rng, temperature_moves, random_opening))
     return examples
