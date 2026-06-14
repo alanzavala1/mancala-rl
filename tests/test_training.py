@@ -15,11 +15,13 @@ from mancala_rl.training import train_step
 
 
 def _fixed_batch():
+    # f2's own pits (indices 0..5) are non-empty only at 0, 2, 4, so the policy
+    # target must put mass only there (matches the new legal-move masking).
     f1 = [0.08] * 6 + [0.0] + [0.08] * 6 + [0.0]
     f2 = [0.1, 0.0, 0.1, 0.0, 0.1, 0.0, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.0]
     return [
         (f1, [0.0, 0.0, 1.0, 0.0, 0.0, 0.0], 1.0),
-        (f2, [0.5, 0.5, 0.0, 0.0, 0.0, 0.0], -1.0),
+        (f2, [0.5, 0.0, 0.5, 0.0, 0.0, 0.0], -1.0),
     ]
 
 

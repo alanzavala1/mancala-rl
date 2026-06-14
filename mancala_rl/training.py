@@ -22,10 +22,13 @@ def train_step(net, optimizer, batch, device):
     target_v = torch.tensor([ex[2] for ex in batch], dtype=torch.float32, device=device)
 
     logits, value = net(feats)
-    # cross-entropy between the target distribution and the network's softmax.
-    # Illegal moves have target 0, so they don't pull the loss directly (and at
-    # play time MCTS only ever considers legal moves anyway).
-    log_probs = F.log_softmax(logits, dim=1)
+    # Mask illegal moves (own pits 0..5 that are empty) before the softmax, so
+    # training matches how priors are used at play time -- MCTS softmaxes over
+    # legal moves only. Without this the net is trained under a different
+    # normalization than it's used with.
+    legal = feats[:, :6] > 0
+    masked_logits = logits.masked_fill(~legal, -1e9)
+    log_probs = F.log_softmax(masked_logits, dim=1)
     policy_loss = -(target_p * log_probs).sum(dim=1).mean()
     value_loss = F.mse_loss(value, target_v)
     loss = policy_loss + value_loss
