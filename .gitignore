@@ -13,6 +13,7 @@ env/
 *.obj
 *.exe
 *.so
+cnn/policy_weights.h
 
 # Model checkpoints and training artifacts (kept out of the repo on purpose)
 *.pt
@@ -21,7 +22,7 @@ env/
 *.ckpt
 *.npz
 checkpoints/
-runs/
+runs*/
 logs/
 wandb/
 
