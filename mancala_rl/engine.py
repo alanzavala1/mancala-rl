@@ -5,7 +5,9 @@ Rules:
 - Sow seeds counterclockwise one per pit; skip the opponent's store.
 - If the last seed lands in your own store, you take another turn.
 - If the last seed lands in one of your own pits that was empty, you capture
-  that seed plus every seed in the pit directly opposite, into your store.
+  that seed plus every seed in the pit directly opposite, into your store --
+  even if the opposite pit is empty (you still bank your last seed). This is
+  the "empty capture" variant solved by Irving, Donkers & Uiterwijk (2000).
 - The game ends when one player's six pits are all empty. The other player
   sweeps their remaining seeds into their store. Higher store wins; equal ties.
 
@@ -113,13 +115,17 @@ def _sow(d, player, pit):
     if pit == own_store:
         return pit, True
 
-    # Capture: last seed landed in one of our own pits that was empty.
+    # Capture (empty-capture variant): the last seed landed in one of our own
+    # pits that was empty, so we bank that seed plus the opposite pit. The
+    # opposite pit may itself be empty -- we still bank our own last seed. This
+    # is the variant Irving, Donkers & Uiterwijk (2000) solved (Kalah(6,4) is a
+    # first-player win by 10), as opposed to the rule that captures only when
+    # the opposite pit is non-empty.
     if pit in own_pits and d[pit] == 1:
         opposite = OPPOSITE_PIT[pit]
-        if d[opposite] > 0:
-            d[own_store] += d[pit] + d[opposite]
-            d[pit] = 0
-            d[opposite] = 0
+        d[own_store] += d[pit] + d[opposite]
+        d[pit] = 0
+        d[opposite] = 0
 
     return pit, False
 

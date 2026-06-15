@@ -56,6 +56,20 @@ def test_capture_into_own_empty_pit():
     assert d['I'] == 0
 
 
+def test_capture_when_opposite_is_empty():
+    # Empty-capture variant: landing the last seed in your own empty pit
+    # captures even when the opposite pit is empty -- you still bank that seed.
+    # B(1) -> lands in empty C; the opposite of C is I, which is empty here.
+    # A and G keep both sides non-empty so the move does not also end the game.
+    s = _state({'B': 1, 'C': 0, 'I': 0, 'A': 1, 'G': 2}, player=1)
+    ns, _, done, info = engine.step(s, 1)  # action 1 == pit B
+    d = dict(zip(BOARD_ORDER, ns.board))
+    assert d['1'] == 1            # banked our own last seed (opposite was empty)
+    assert d['C'] == 0
+    assert done is False
+    assert ns.current_player == 2  # capture ends the turn
+
+
 def test_opponent_store_is_skipped():
     # A long sow from A must never deposit into player 2's store.
     s = _state({'A': 20}, player=1)

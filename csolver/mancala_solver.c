@@ -53,12 +53,10 @@ static int apply_move(const int *b, int player, int action,
 
     int extra_turn = (idx == own_store);
     if (!extra_turn && idx >= lo && idx <= lo + 5 && out[idx] == 1) {
-        int opp = OPP[idx];
-        if (opp >= 0 && out[opp] > 0) {
-            out[own_store] += out[idx] + out[opp];
-            out[idx] = 0;
-            out[opp] = 0;
-        }
+        int opp = OPP[idx];                       /* own pits always have a valid opposite */
+        out[own_store] += out[idx] + out[opp];    /* empty-capture: opposite may be 0 */
+        out[idx] = 0;
+        out[opp] = 0;
     }
 
     int p1 = out[0] + out[1] + out[2] + out[3] + out[4] + out[5];

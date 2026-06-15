@@ -19,9 +19,11 @@ measured against.
 Capture Mancala: six pits and one store per player, four seeds per pit to
 start. Sow counterclockwise, skipping the opponent's store. Landing your last
 seed in your own store earns another turn. Landing it in one of your own empty
-pits captures that seed plus everything in the opposite pit. The game ends when
-a player's pits are all empty; the other player sweeps their remaining seeds.
-Higher store wins.
+pits captures that seed plus everything in the opposite pit -- even when the
+opposite pit is empty, you still bank your last seed. This is the *empty-capture*
+variant solved by Irving, Donkers & Uiterwijk (2000), for which Kalah(6,4) is a
+proven first-player win by 10. The game ends when a player's pits are all empty;
+the other player sweeps their remaining seeds. Higher store wins.
 
 ## Layout
 

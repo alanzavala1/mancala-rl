@@ -86,11 +86,10 @@ def apply_fast(board, player, action):
 
     extra_turn = idx == own_store
     if not extra_turn and idx in own_pits and b[idx] == 1:
-        opp = OPPOSITE[idx]
-        if b[opp] > 0:
-            b[own_store] += b[idx] + b[opp]
-            b[idx] = 0
-            b[opp] = 0
+        opp = OPPOSITE[idx]                       # empty-capture: opp may be 0
+        b[own_store] += b[idx] + b[opp]
+        b[idx] = 0
+        b[opp] = 0
 
     p1 = b[0] + b[1] + b[2] + b[3] + b[4] + b[5]
     p2 = b[7] + b[8] + b[9] + b[10] + b[11] + b[12]
