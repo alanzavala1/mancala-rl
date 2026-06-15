@@ -16,6 +16,7 @@
  * keyed on whose turn it actually is. The same subtlety as the Python solver.
  */
 
+#include <stdlib.h>
 #include <string.h>
 
 #define STORE1 6
@@ -148,3 +149,126 @@ int apply_one(const int *b, int player, int action, int *out) {
     int np, margin;
     return apply_move(b, player, action, out, &np, &margin) ? 0 : np;
 }
+
+/* --- exact full-game solver (alpha-beta + transposition table) ---------- */
+
+/* The depth-limited search above is the fast heuristic opponent. This solver
+ * instead searches every line to the END of the game -- no depth cap and no
+ * leaf heuristic -- so it returns the EXACT minimax value: the final store
+ * margin (store1 - store2) under perfect play. Three things make solving the
+ * opening tractable: a transposition table (Kalah has many transpositions),
+ * safe futility bounds, and move ordering. This mirrors mancala_rl/solver.py,
+ * which is unit-tested against brute-force minimax; tests/test_csolver.py
+ * cross-checks this C solver against that Python one. */
+
+#define TT_BITS 24
+#define TT_SIZE (1 << TT_BITS)
+#define TT_MASK (TT_SIZE - 1)
+
+enum { TT_EMPTY = 0, TT_LOWER = 1, TT_EXACT = 2, TT_UPPER = 3 };
+
+typedef struct {
+    signed char board[14];   /* full position, for exact collision checking */
+    signed char player;
+    signed char flag;
+    signed char best;        /* best action found, for move ordering */
+    int value;
+} TTEntry;
+
+static TTEntry *g_tt = NULL;
+static long long g_nodes = 0;
+
+static unsigned int hash_board(const int *b, int player) {
+    unsigned int h = 2166136261u;                       /* FNV-1a */
+    for (int i = 0; i < 14; i++) { h ^= (unsigned int)b[i]; h *= 16777619u; }
+    h ^= (unsigned int)player; h *= 16777619u;
+    return h;
+}
+
+typedef struct { int a, np, done, margin, score, board[14]; } Child;
+
+static int solve_ab(const int *b, int player, int alpha, int beta) {
+    g_nodes++;
+
+    /* Safe futility bounds: the final margin lies in [margin - pits, margin + pits],
+     * because at most `pits` more seeds can still be banked, by either side. */
+    int pits = b[0]+b[1]+b[2]+b[3]+b[4]+b[5] + b[7]+b[8]+b[9]+b[10]+b[11]+b[12];
+    int margin = b[STORE1] - b[STORE2];
+    if (margin + pits <= alpha) return margin + pits;
+    if (margin - pits >= beta)  return margin - pits;
+
+    int alpha_orig = alpha, beta_orig = beta;
+    TTEntry *e = &g_tt[hash_board(b, player) & TT_MASK];
+    int tt_best = -1, hit = (e->flag != TT_EMPTY && e->player == (signed char)player);
+    if (hit)
+        for (int i = 0; i < 14; i++)
+            if (e->board[i] != (signed char)b[i]) { hit = 0; break; }
+    if (hit) {
+        if (e->flag == TT_EXACT) return e->value;
+        if (e->flag == TT_LOWER) { if (e->value > alpha) alpha = e->value; }
+        else if (e->value < beta) beta = e->value;
+        if (alpha >= beta) return e->value;
+        tt_best = e->best;
+    }
+
+    int lo = (player == 1) ? 0 : 7;
+    Child cs[6];
+    int na = 0;
+    for (int a = 0; a < 6; a++) {
+        if (b[lo + a] == 0) continue;
+        Child *c = &cs[na];
+        int np = 0, mg = 0;
+        c->done = apply_move(b, player, a, c->board, &np, &mg);
+        c->a = a; c->np = np; c->margin = mg;
+        int extra = (!c->done && np == player) ? 1 : 0;
+        int gain = (player == 1) ? (c->board[STORE1] - b[STORE1])
+                                 : (c->board[STORE2] - b[STORE2]);
+        c->score = extra * 100 + gain + (a == tt_best ? 100000 : 0);
+        na++;
+    }
+    for (int i = 1; i < na; i++) {           /* insertion sort, score descending */
+        Child key = cs[i];
+        int j = i - 1;
+        while (j >= 0 && cs[j].score < key.score) { cs[j + 1] = cs[j]; j--; }
+        cs[j + 1] = key;
+    }
+
+    int best_a = cs[0].a, value;
+    if (player == 1) {                       /* maximize the margin */
+        value = NEG_INF;
+        for (int i = 0; i < na; i++) {
+            int v = cs[i].done ? cs[i].margin : solve_ab(cs[i].board, cs[i].np, alpha, beta);
+            if (v > value) { value = v; best_a = cs[i].a; }
+            if (value > alpha) alpha = value;
+            if (alpha >= beta) break;
+        }
+    } else {                                 /* minimize the margin */
+        value = POS_INF;
+        for (int i = 0; i < na; i++) {
+            int v = cs[i].done ? cs[i].margin : solve_ab(cs[i].board, cs[i].np, alpha, beta);
+            if (v < value) { value = v; best_a = cs[i].a; }
+            if (value < beta) beta = value;
+            if (beta <= alpha) break;
+        }
+    }
+
+    e->flag = (value <= alpha_orig) ? TT_UPPER : (value >= beta_orig ? TT_LOWER : TT_EXACT);
+    for (int i = 0; i < 14; i++) e->board[i] = (signed char)b[i];
+    e->player = (signed char)player;
+    e->best = (signed char)best_a;
+    e->value = value;
+    return value;
+}
+
+/* Exact value (store1 - store2 under perfect play) of a position, searched to
+ * the end of the game. Allocates the transposition table on first use. */
+__declspec(dllexport)
+int solve_exact(const int *b, int player) {
+    if (!g_tt) g_tt = (TTEntry *)calloc(TT_SIZE, sizeof(TTEntry));
+    g_nodes = 0;
+    return solve_ab(b, player, NEG_INF, POS_INF);
+}
+
+/* Positions visited by the most recent solve_exact call (for measurement). */
+__declspec(dllexport)
+long long solve_nodes(void) { return g_nodes; }

@@ -20,7 +20,7 @@ from mancala_rl import engine
 from mancala_rl.engine import State
 from mancala_rl.network import MancalaNet
 from mancala_rl.mcts import MCTS, best_action, visit_counts
-from mancala_rl.solver import Solver
+from mancala_rl import reference
 
 
 # Player 1 to move. Playing B (action 1) sows into the empty C, captures the 3
@@ -35,9 +35,10 @@ def _net():
     return MancalaNet().eval()
 
 
-def test_solver_confirms_the_win():
+def test_reference_confirms_the_win():
     # Sanity: action 1 really is (uniquely) optimal here.
-    value, best = Solver().solve(_FORCED_WIN)
+    value = reference.minimax(_FORCED_WIN)
+    best = reference.best_moves(_FORCED_WIN)
     assert value > 0 and best == [1]
 
 

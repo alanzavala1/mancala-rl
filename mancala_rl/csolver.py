@@ -30,6 +30,12 @@ _lib.move_values.restype = None
 _lib.apply_one.argtypes = [_int_p, ctypes.c_int, ctypes.c_int, _int_p]
 _lib.apply_one.restype = ctypes.c_int
 
+_lib.solve_exact.argtypes = [_int_p, ctypes.c_int]
+_lib.solve_exact.restype = ctypes.c_int
+
+_lib.solve_nodes.argtypes = []
+_lib.solve_nodes.restype = ctypes.c_longlong
+
 
 def move_values(state, depth):
     """Return a list of 6 values (player-1 perspective), one per pit action,
@@ -47,6 +53,19 @@ def apply_one(board, player, action):
     out = (ctypes.c_int * 14)()
     nxt = _lib.apply_one(inp, player, action, out)
     return tuple(out), nxt
+
+
+def solve_exact(state):
+    """Exact game value of `state`: the final store margin (store1 - store2)
+    under perfect play, searched to the end of the game (alpha-beta + TT).
+    Positive favors player 1. Use solve_nodes() for the positions visited."""
+    board = (ctypes.c_int * 14)(*state.board)
+    return _lib.solve_exact(board, state.current_player)
+
+
+def solve_nodes():
+    """Positions visited by the most recent solve_exact call."""
+    return _lib.solve_nodes()
 
 
 class CSolverBot:

@@ -15,9 +15,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from mancala_rl import engine
-from mancala_rl.solver import Solver, legal_actions
-from mancala_rl import csolver
+from mancala_rl import engine, csolver, reference
 
 
 def test_c_rules_match_engine():
@@ -56,13 +54,27 @@ def test_c_search_matches_exact_solver_in_endgames():
     for _ in range(200):
         board = _small_position(rng)
         player = rng.choice([1, 2])
-        exact = Solver().value(board, player)
         state = engine.State(board, player)
+        exact = reference.minimax(state)
         values = csolver.move_values(state, depth=40)
-        legal = legal_actions(board, player)
+        legal = engine.legal_moves(state)
         best = max(values[a] for a in legal) if player == 1 \
             else min(values[a] for a in legal)
         assert best == exact, f"{board} p{player}: C {best} != exact {exact}"
+
+
+def test_c_exact_solver_matches_minimax():
+    # The C full-game solver (alpha-beta + TT, searched to the end) must return
+    # the exact same value as a brute-force minimax. This is what lets us trust
+    # a full (6,4) solve, where no brute-force check is feasible.
+    rng = random.Random(321)
+    for _ in range(400):
+        board = _small_position(rng)
+        player = rng.choice([1, 2])
+        state = engine.State(board, player)
+        expected = reference.minimax(state)
+        got = csolver.solve_exact(state)
+        assert got == expected, f"{board} p{player}: C exact {got} != minimax {expected}"
 
 
 def _run_all():

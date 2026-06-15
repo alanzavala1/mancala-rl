@@ -8,7 +8,7 @@ first player = South:
     Kalah(6,1) = +2     Kalah(6,2) = +10    Kalah(6,3) = +2
     Kalah(6,4) = +10    Kalah(6,5) = +12
 
-We run our own exact solver (mancala_rl.solver: alpha-beta + transposition
+We run our own exact C solver (mancala_rl.csolver: alpha-beta + transposition
 table) on the opening of each size and check it matches. A match is ground
 truth on our *own* code -- it confirms our rules are that solved variant, not
 taken on faith. Larger n are dramatically harder (see the paper's complexity
@@ -25,7 +25,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from mancala_rl.solver import Solver
+from mancala_rl import csolver, engine
 
 # Irving, Donkers & Uiterwijk (2000), Table 9 (first-player margin under perfect play).
 PUBLISHED = {1: 2, 2: 10, 3: 2, 4: 10, 5: 12}
@@ -52,15 +52,16 @@ def main():
             print(f"  Kalah(6,{n}): skipped -- previous solve took {last:.0f}s "
                   f"(> budget {args.budget:.0f}s)", flush=True)
             break
-        solver = Solver()
+        board = opening(n)
         t0 = time.perf_counter()
-        v = solver.value(opening(n), 1)
+        v = csolver.solve_exact(engine.State(board, 1))
+        nodes = csolver.solve_nodes()
         last = time.perf_counter() - t0
         pub = PUBLISHED.get(n)
         result = "OK" if (pub is not None and v == pub) else \
                  ("MISMATCH" if pub is not None else "(no published value)")
         pub_s = f"+{pub}" if pub is not None else "?"
-        print(f"  Kalah(6,{n}){pub_s:>10}{v:>+7}{solver.nodes:>16,}{last:>9.1f}s   {result}",
+        print(f"  Kalah(6,{n}){pub_s:>10}{v:>+7}{nodes:>16,}{last:>9.1f}s   {result}",
               flush=True)
 
 
