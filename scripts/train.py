@@ -68,9 +68,14 @@ def main():
     p.add_argument("--batch", type=int, default=256)
     p.add_argument("--buffer", type=int, default=60000)
     p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--value-weight", type=float, default=1.0,
+                   help="weight on the value loss relative to the policy loss")
     p.add_argument("--random-opening", type=int, default=8)
     p.add_argument("--temp-moves", type=int, default=12)
     p.add_argument("--dirichlet", type=float, default=0.3)
+    p.add_argument("--gumbel", action="store_true",
+                   help="use Gumbel AlphaZero self-play (sample-efficient; pair with a low --sims)")
+    p.add_argument("--gumbel-m", type=int, default=16, help="Gumbel candidate actions at the root")
     p.add_argument("--eval-every", type=int, default=10)
     p.add_argument("--eval-games", type=int, default=30)
     p.add_argument("--solver-depth", type=int, default=8)
@@ -95,6 +100,11 @@ def main():
 
     net = MancalaNet(hidden=args.hidden, layers=args.layers).to(device)
     opt = torch.optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-4)
+    # Cosine learning-rate decay across the run: a high LR early to learn fast,
+    # easing toward lr/10 so a long run settles into a better minimum instead of
+    # bouncing around it (a fixed LR plateaued the loss around 1.42).
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt, T_max=args.iterations, eta_min=args.lr * 0.1)
     buffer = deque(maxlen=args.buffer)
     best_score = -1
 
@@ -110,7 +120,17 @@ def main():
             t0 = time.perf_counter()
 
             net.eval()
-            if use_pool:
+            if args.gumbel and use_pool:
+                state_dict = {k: v.detach().cpu() for k, v in net.state_dict().items()}
+                examples = selfplay.generate_gumbel_parallel(
+                    executor, state_dict, net.hidden, net.layers, args.games, args.workers,
+                    args.sims, args.gumbel_m, args.random_opening, args.seed + it)
+            elif args.gumbel:
+                from mancala_rl.gumbel import GumbelMCTS
+                g = GumbelMCTS(net, device, n_simulations=args.sims, m=args.gumbel_m,
+                               rng=random.Random(args.seed + it))
+                examples = selfplay.generate_gumbel(g, args.games, args.random_opening)
+            elif use_pool:
                 state_dict = {k: v.detach().cpu() for k, v in net.state_dict().items()}
                 examples = selfplay.generate_parallel(
                     executor, state_dict, net.hidden, net.layers, args.games, args.workers,
@@ -129,8 +149,9 @@ def main():
             losses = []
             for _ in range(args.train_steps):
                 batch = random.sample(buf_list, min(len(buf_list), args.batch))
-                losses.append(train_step(net, opt, batch, device)[0])
+                losses.append(train_step(net, opt, batch, device, args.value_weight)[0])
             avg_loss = sum(losses) / len(losses)
+            scheduler.step()
             net.eval()
             save_net(net, out / "champion.pt")
 

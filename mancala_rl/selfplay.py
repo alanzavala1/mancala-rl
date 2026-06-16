@@ -71,13 +71,12 @@ def play_game(mcts, rng=None, temperature_moves=10, random_opening=0, max_plies=
         s1, s2 = engine.stores(state)            # safety net if the cap is hit
         winner = 1 if s1 > s2 else (2 if s2 > s1 else 0)
 
+    s1, s2 = engine.stores(state)        # final score; the margin is the value signal
+    final_margin = s1 - s2
     examples = []
     for feat, policy_target, player in history:
-        if winner == 0:
-            value = 0.0
-        else:
-            value = 1.0 if winner == player else -1.0
-        examples.append((feat, policy_target, value))
+        mover_margin = final_margin if player == 1 else -final_margin
+        examples.append((feat, policy_target, features.margin_value(mover_margin)))
     return examples
 
 
@@ -127,5 +126,76 @@ def generate_parallel(executor, state_dict, hidden, layers, n_games, n_workers, 
                 for i in range(n_workers) if per[i] > 0]
     examples = []
     for chunk in executor.map(_selfplay_worker, payloads):
+        examples.extend(chunk)
+    return examples
+
+
+# --- Gumbel AlphaZero self-play (isolated; uses gumbel.GumbelMCTS) -----------
+
+def play_game_gumbel(gmcts, random_opening=0, max_plies=400):
+    """One self-play game using Gumbel search. The policy target is the search's
+    improved (completed-Q) policy; the value target is the final margin."""
+    rng = gmcts.rng
+    state = engine.reset(first_player=1)
+    for _ in range(rng.randint(0, random_opening)):
+        state, _, done, _ = engine.step(state, rng.choice(engine.legal_moves(state)))
+        if done:
+            state = engine.reset(first_player=1)
+            break
+
+    history = []
+    for _ in range(max_plies):
+        action, policy, _ = gmcts.search(state)
+        history.append((features.encode(state), policy, state.current_player))
+        state, _, done, _ = engine.step(state, action)
+        if done:
+            break
+
+    s1, s2 = engine.stores(state)
+    final_margin = s1 - s2
+    examples = []
+    for feat, policy, player in history:
+        mover_margin = final_margin if player == 1 else -final_margin
+        examples.append((feat, policy, features.margin_value(mover_margin)))
+    return examples
+
+
+def generate_gumbel(gmcts, n_games, random_opening=0):
+    examples = []
+    for _ in range(n_games):
+        examples.extend(play_game_gumbel(gmcts, random_opening=random_opening))
+    return examples
+
+
+def _gumbel_worker(payload):
+    import random as _random
+    import numpy as _np
+    import torch as _torch
+    from .network import MancalaNet
+    from .gumbel import GumbelMCTS
+
+    (state_dict, hidden, layers, n_games, sims, m, random_opening, seed) = payload
+    _torch.set_num_threads(1)
+    _random.seed(seed)
+    _np.random.seed(seed % (2 ** 32 - 1))
+    _torch.manual_seed(seed)
+
+    net = MancalaNet(hidden=hidden, layers=layers)
+    net.load_state_dict(state_dict)
+    net.eval()
+    g = GumbelMCTS(net, _torch.device("cpu"), n_simulations=sims, m=m,
+                   rng=_random.Random(seed))
+    return generate_gumbel(g, n_games, random_opening)
+
+
+def generate_gumbel_parallel(executor, state_dict, hidden, layers, n_games, n_workers,
+                             sims, m, random_opening, base_seed):
+    per = [n_games // n_workers + (1 if i < n_games % n_workers else 0)
+           for i in range(n_workers)]
+    payloads = [(state_dict, hidden, layers, per[i], sims, m, random_opening,
+                 base_seed * 100003 + i * 7919)
+                for i in range(n_workers) if per[i] > 0]
+    examples = []
+    for chunk in executor.map(_gumbel_worker, payloads):
         examples.extend(chunk)
     return examples

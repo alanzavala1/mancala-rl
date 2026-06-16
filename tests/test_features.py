@@ -13,12 +13,12 @@ from mancala_rl import engine, features
 from mancala_rl.engine import State
 
 
-def test_shape_range_and_sum():
+def test_shape_and_opening_encoding():
     vec = features.encode(engine.reset())
     assert len(vec) == features.NUM_FEATURES == 14
-    assert all(0.0 <= x <= 1.0 for x in vec)
-    # Every seed is counted once across the 14 features, so they sum to 1.
-    assert abs(sum(vec) - 1.0) < 1e-9
+    assert all(x >= 0.0 for x in vec)
+    # 1.0 == a full starting pit; the opening is twelve full pits, empty stores.
+    assert vec == [1.0] * 6 + [0.0] + [1.0] * 6 + [0.0]
 
 
 def test_opening_is_symmetric():
@@ -43,7 +43,7 @@ def test_to_move_half_comes_first():
              0, 4, 0, 1, 0, 2, 3)
     # Player 2 to move: "my" half should be G-L + store2.
     vec = features.encode(State(board, 2))
-    expected_mine = [x / 48 for x in board[7:14]]
+    expected_mine = [x / features._SCALE for x in board[7:14]]
     assert vec[0:7] == expected_mine
 
 

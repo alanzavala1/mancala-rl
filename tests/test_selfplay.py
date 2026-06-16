@@ -31,20 +31,20 @@ def test_examples_are_well_formed():
         assert len(policy) == features.NUM_ACTIONS
         assert abs(sum(policy) - 1.0) < 1e-6          # a probability distribution
         assert all(0.0 <= p <= 1.0 for p in policy)
-        assert value in (-1.0, 0.0, 1.0)
+        assert -1.0 <= value <= 1.0                   # squashed final-margin value
 
 
 def test_values_are_zero_sum():
-    # Recompute per-move player to check the value labelling is consistent:
-    # the two players' value labels must be exact opposites (or all 0 on a tie).
-    rng = random.Random(1)
-    mcts = _mcts()
-    # Re-run with the internal history exposed via play_game's contract:
-    examples = selfplay.play_game(mcts, rng=rng)
-    values = {round(v, 3) for _, _, v in examples}
-    assert values.issubset({-1.0, 0.0, 1.0})
-    if values != {0.0}:                # not a tie -> both +1 and -1 should appear
-        assert 1.0 in values and -1.0 in values
+    # The final margin is a single number, so every position's value label is +m
+    # (player-1's view of it) or -m (the other side), or 0 on a tie. Check that:
+    # all in range, one shared magnitude, and both signs present when not a tie.
+    examples = selfplay.play_game(_mcts(), rng=random.Random(1))
+    values = [v for _, _, v in examples]
+    assert all(-1.0 <= v <= 1.0 for v in values)
+    nonzero = [v for v in values if abs(v) > 1e-9]
+    assert len({round(abs(v), 6) for v in nonzero}) <= 1   # one |margin| per game
+    if nonzero:                                            # not a tie -> opposite labels
+        assert any(v > 0 for v in nonzero) and any(v < 0 for v in nonzero)
 
 
 def test_generate_concatenates_games():

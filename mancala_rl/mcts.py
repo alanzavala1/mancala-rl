@@ -10,6 +10,13 @@ The one subtlety worth stating: values are stored in an *absolute*
 by flipping the sign when its player isn't player 1. Because the sign depends on
 *who* is to move rather than on depth parity, the extra-turn rule (same player
 moves twice) is handled correctly for free -- no negamax assumption.
+
+On top of that we run a score-free MCTS-Solver (Winands & Bjornsson, 2008):
+terminal positions are *proven* wins/losses/draws, and those proofs propagate up
+the tree (min/max keyed on the mover, in the same absolute frame). The search
+then takes a proven win when it sees one and never walks into a proven loss, so
+the agent plays the part of the game it can see to the end *exactly* instead of
+only averaging playouts -- which is where won endgames were being thrown away.
 """
 
 import math
@@ -17,13 +24,13 @@ import math
 import torch
 
 from . import engine
-from .features import NUM_ACTIONS
+from .features import NUM_ACTIONS, margin_value
 from .network import encode_batch
 
 
 class _Node:
     __slots__ = ("state", "player", "terminal", "winner",
-                 "legal", "expanded", "P", "N", "W", "children")
+                 "legal", "expanded", "P", "N", "W", "children", "proven")
 
     def __init__(self, state, terminal=False, winner=None):
         self.state = state
@@ -36,6 +43,13 @@ class _Node:
         self.N = {}        # action -> visit count
         self.W = {}        # action -> total value, from this node's perspective
         self.children = {} # action -> _Node
+        # MCTS-Solver: proven game-theoretic value in the absolute (player-1)
+        # frame -- +1 a proven player-1 win, -1 a proven player-2 win, 0 a proven
+        # draw, None not yet proven. Terminals are proven on creation.
+        if terminal:
+            self.proven = 1 if winner == 1 else (-1 if winner == 2 else 0)
+        else:
+            self.proven = None
 
 
 class MCTS:
@@ -88,7 +102,8 @@ class MCTS:
             node = child
 
         if node.terminal:
-            v_abs = 1.0 if node.winner == 1 else (-1.0 if node.winner == 2 else 0.0)
+            s1, s2 = engine.stores(node.state)     # margin-based terminal value (P1 frame)
+            v_abs = margin_value(s1 - s2)
         else:
             v_abs = self._expand(node)
 
@@ -96,18 +111,51 @@ class MCTS:
             n.N[a] += 1
             n.W[a] += v_abs if n.player == 1 else -v_abs
 
+        # MCTS-Solver: ripple proven win/loss/draw values up from the leaf.
+        for n, _ in reversed(path):
+            self._update_proof(n)
+
     def _select(self, node):
+        win_val = 1 if node.player == 1 else -1   # value the mover wants (absolute frame)
         total = sum(node.N.values())
         sqrt_total = math.sqrt(total + 1)   # +1 so the prior guides the first visit too
-        best_a, best_score = node.legal[0], -1e30
+        best_a, best_score = None, -1e30
         for a in node.legal:
+            child = node.children.get(a)
+            if child is not None and child.proven is not None:
+                if child.proven == win_val:
+                    return a                    # a proven win -- take it outright
+                if child.proven == -win_val:
+                    continue                    # a proven loss -- never walk into it
             n = node.N[a]
             q = node.W[a] / n if n > 0 else 0.0           # node's own perspective
             u = self.c_puct * node.P[a] * sqrt_total / (1 + n)
             score = q + u
             if score > best_score:
                 best_score, best_a = score, a
-        return best_a
+        return best_a if best_a is not None else node.legal[0]
+
+    def _update_proof(self, node):
+        """Set node.proven (absolute frame) once its value is forced by its
+        children: the mover has a proven win if ANY child is a proven win for it;
+        a node is a proven loss/draw only once EVERY legal move is expanded and
+        proven. The mover maximizes the sign if player 1, minimizes it if 2."""
+        if node.proven is not None or node.terminal:
+            return
+        win_val = 1 if node.player == 1 else -1
+        proven_children = []
+        all_proven = True
+        for a in node.legal:
+            child = node.children.get(a)
+            if child is None or child.proven is None:
+                all_proven = False
+                continue
+            if child.proven == win_val:
+                node.proven = win_val           # a forced win for the mover
+                return
+            proven_children.append(child.proven)
+        if all_proven and proven_children:      # every move explored, none winning
+            node.proven = max(proven_children) if node.player == 1 else min(proven_children)
 
     def _add_dirichlet_noise(self, root):
         import numpy as np
@@ -125,9 +173,20 @@ def visit_counts(root):
 
 
 def best_action(root, rng):
-    """Most-visited action, ties broken with rng."""
-    m = max(root.N[a] for a in root.legal)
-    return rng.choice([a for a in root.legal if root.N[a] == m])
+    """Pick the move to play: a proven win if the solver found one, else the
+    most-visited move -- and never a proven loss when something else exists."""
+    win_val = 1 if root.player == 1 else -1
+    proven_wins = [a for a in root.legal
+                   if root.children.get(a) is not None
+                   and root.children[a].proven == win_val]
+    if proven_wins:
+        return rng.choice(proven_wins)
+    safe = [a for a in root.legal
+            if not (root.children.get(a) is not None
+                    and root.children[a].proven == -win_val)]
+    pool = safe or root.legal
+    m = max(root.N[a] for a in pool)
+    return rng.choice([a for a in pool if root.N[a] == m])
 
 
 class MCTSBot:
