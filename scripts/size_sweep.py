@@ -10,9 +10,6 @@ isolated from search (that's why we use PolicyBot, not MCTS).
 
 import argparse
 import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import matplotlib
 matplotlib.use("Agg")

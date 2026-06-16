@@ -7,11 +7,7 @@ Usage:
     python scripts/measure_csolver.py
 """
 
-import pathlib
-import sys
 import time
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from mancala_rl.bots import RandomBot, GreedyBot
 from mancala_rl.csolver import CSolverBot

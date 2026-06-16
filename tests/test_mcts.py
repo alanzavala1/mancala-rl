@@ -8,11 +8,8 @@ winning move with the exact solver.
     .venv\\Scripts\\python tests/test_mcts.py
 """
 
-import pathlib
 import random
 import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import torch
 

@@ -19,11 +19,7 @@ tables), so this stops early if a solve exceeds the time budget.
 """
 
 import argparse
-import pathlib
-import sys
 import time
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from mancala_rl import csolver, engine
 

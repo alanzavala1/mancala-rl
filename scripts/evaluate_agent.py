@@ -9,10 +9,6 @@ RandomBot, GreedyBot, and the C solver -- each reported as a win rate with a
 """
 
 import argparse
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import torch
 

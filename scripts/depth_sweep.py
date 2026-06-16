@@ -12,11 +12,7 @@ near 50%. The informative view is split by who moves first:
 """
 
 import argparse
-import pathlib
-import sys
 import time
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import random
 import torch

@@ -9,11 +9,7 @@ earns another turn, and landing in one of your own empty pits captures.
 """
 
 import argparse
-import pathlib
 import random
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import torch
 

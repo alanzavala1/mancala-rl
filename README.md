@@ -93,13 +93,17 @@ tests/             correctness tests
 ## Run it
 
 ```sh
-pip install -r requirements.txt
+pip install -e .                              # install the package + deps (numpy, torch, matplotlib)
 powershell csolver/build.ps1                  # build the C solver (needs gcc)
 python scripts/train.py --out runs            # train by self-play
 python scripts/tournament.py --classical      # Elo tournament + the ablation
 python scripts/play.py                         # play it yourself, in the terminal
 python scripts/verify_solution.py --max-n 4   # confirm the solved game value
 ```
+
+For an NVIDIA GPU build of PyTorch (e.g. CUDA 12.8), install torch first:
+`pip install torch --index-url https://download.pytorch.org/whl/cu128`. The CPU
+build is fine -- the network is tiny.
 
 ## What I learned
 

@@ -4,10 +4,7 @@
     pytest tests/test_features.py
 """
 
-import pathlib
 import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from mancala_rl import engine, features
 from mancala_rl.engine import State

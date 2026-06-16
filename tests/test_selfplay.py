@@ -3,10 +3,7 @@
     .venv\\Scripts\\python tests/test_selfplay.py
 """
 
-import pathlib
 import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import random
 

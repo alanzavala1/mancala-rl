@@ -12,10 +12,6 @@ have to clear.
 """
 
 import argparse
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from mancala_rl.bots import RandomBot, GreedyBot
 from mancala_rl.evaluate import evaluate

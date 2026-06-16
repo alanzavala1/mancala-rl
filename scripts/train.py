@@ -21,12 +21,9 @@ import multiprocessing as mp
 import os
 import pathlib
 import random
-import sys
 import time
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import torch

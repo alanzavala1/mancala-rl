@@ -9,9 +9,6 @@ and second player, varied openings) over iterations. Saved as a PNG for the READ
 import argparse
 import csv
 import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import matplotlib
 matplotlib.use("Agg")

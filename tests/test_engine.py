@@ -5,11 +5,8 @@ Runnable two ways:
     pytest tests/test_engine.py        # if pytest is installed
 """
 
-import pathlib
 import random
 import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from mancala_rl import engine
 from mancala_rl.engine import State, BOARD_ORDER
