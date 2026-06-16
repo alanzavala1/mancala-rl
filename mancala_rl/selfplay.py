@@ -6,11 +6,13 @@ position becomes one training example:
   - the MCTS visit distribution over moves (a better policy than the network's
     raw hunch, because MCTS actually looked ahead -- the network learns to
     imitate it),
-  - the eventual game result, from the perspective of the player who was to move
-    at that position (the value to predict).
+  - the game's final score margin, from the perspective of the player to move at
+    that position (the value to predict).
 
-That last point is the v1 alignment fix: each position's value is the real
-outcome for the player who actually had to choose there.
+Two deliberate choices in that value. It's the margin, not just win/loss -- a
+scored target gives the value head more to learn (see features.margin_value).
+And it's from the mover's perspective, the v1 alignment fix: each position is
+labelled with the real outcome for whoever actually had to choose there.
 
 To keep the data varied, the first few moves of each game are sampled in
 proportion to how much MCTS visited them (exploration); after that the most-

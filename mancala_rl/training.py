@@ -2,12 +2,12 @@
 
 Given a batch of (features, policy_target, value_target) examples:
   - policy loss: cross-entropy pushing the policy head toward the MCTS visit
-    distribution (the looked-ahead, better policy).
+    distribution (the looked-ahead policy, which is better than the raw net's).
   - value loss: mean-squared error pushing the value head toward the actual
-    game result.
-  - total loss = policy loss + value loss; the optimizer lowers it.
+    game result (the final-margin target -- see features.margin_value).
+  - total loss = policy loss + value_weight * value loss; the optimizer lowers it.
 
-The full self-play -> train -> gate loop that calls this lives in
+The full self-play -> train -> evaluate loop that calls this lives in
 scripts/train.py.
 """
 

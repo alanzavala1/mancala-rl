@@ -1,100 +1,121 @@
 # mancala-rl
 
-A reinforcement learning agent for Mancala (capture variant), built from
-scratch in stages. Every performance claim in this README comes from the
-evaluation harness, not from intuition.
+A from-scratch AlphaZero-style agent for Kalah (capture Mancala), trained by
+self-play. Every number here comes from the evaluation harness, not intuition.
 
-This is a rebuild of an old school project. The game engine is kept from that
-project (its rules were correct); everything else is new. See
-[What I learned](#what-i-learned) for the post-mortem on the first version.
+It's a rebuild of a failed school project — a Deep SARSA agent that never beat
+its own greedy opponent. The game engine is kept; everything else is new. The
+post-mortem is at the bottom.
 
-## Status
+## Result
 
-**Stage 1 complete: engine, baseline bots, and evaluation harness. No learning
-agent yet.** The numbers below are the reference lines a learning agent will be
-measured against.
+In a round-robin Elo tournament against a field of classical opponents, the
+agent (network + MCTS) finishes first — ahead of alpha-beta search to depth 10:
 
-## The game
+| Agent | Elo |
+|---|---|
+| **Network + MCTS (this agent)** | **1808** |
+| alpha-beta depth-10 | 1780 |
+| alpha-beta depth-8 | 1679 |
+| alpha-beta depth-6 | 1611 |
+| alpha-beta depth-4 | 1544 |
+| raw network (no search) | 1298 |
+| greedy (1-ply heuristic) | 1276 |
+| random | 1004 |
 
-Capture Mancala: six pits and one store per player, four seeds per pit to
-start. Sow counterclockwise, skipping the opponent's store. Landing your last
-seed in your own store earns another turn. Landing it in one of your own empty
-pits captures that seed plus everything in the opposite pit -- even when the
-opposite pit is empty, you still bank your last seed. This is the *empty-capture*
-variant solved by Irving, Donkers & Uiterwijk (2000), for which Kalah(6,4) is a
-proven first-player win by 10. The game ends when a player's pits are all empty;
-the other player sweeps their remaining seeds. Higher store wins.
+Head-to-head it beats greedy 99%, depth-8 search 63%, and depth-10 52%
+(`scripts/tournament.py`).
+
+**Is the learning doing the work, or just the search?** Ablation: at the same
+800-simulation budget, network+MCTS beats *no-network* MCTS (plain rollouts) by
+~200 Elo (77-79% head-to-head). The learned network earns most of the strength —
+the search alone is not enough.
+
+![Training curve](assets/training_curve.png)
+*Loss, and win rate vs the depth-8 solver, over training.*
+
+![Strength vs search](assets/strength_vs_search.png)
+*From the opening, strength and per-move latency vs MCTS budget — the efficiency frontier.*
+
+## The game, and ground truth
+
+Kalah(6,4): six pits and one store per side, four seeds per pit. Sow
+counter-clockwise, skip the opponent's store. Last seed in your store → move
+again. Last seed in your own empty pit → capture it and the opposite pit (even
+if the opposite is empty — the *empty-capture* variant).
+
+This exact variant is **solved**: Irving, Donkers & Uiterwijk (2000) proved
+Kalah(6,4) is a first-player win by 10. Our own exact C solver reproduces that
+on our code — (6,1)=+2, (6,2)=+10, (6,3)=+2, and the full (6,4) opening = +10
+(`scripts/verify_solution.py`). So agent strength is measured against a known
+truth, not a guess.
+
+## How it works
+
+Self-play, no human games. A small policy+value network guides an MCTS search;
+the search returns a better move than the raw network; the network is then
+trained to imitate the search's move distribution and to predict the game's
+final score margin. Repeat. Strength comes from the network and search together:
+alone, the network sits near greedy (Elo ~1300) and no-network MCTS reaches only
+~depth-6.
+
+## What moved the needle, and what didn't
+
+The change that broke a long plateau: training the value head on the **final
+score margin**, not a win/loss bit. A scored game gives a richer signal and
+rewards safe, decisive conversion.
+
+Measured non-improvements at this scale: Gumbel AlphaZero (tied plain MCTS at
+equal budget), more self-play simulations (64 ≈ 384), and a bigger network
+(strength saturates). The ceiling here is the network/game, not compute.
 
 ## Layout
 
 ```
-mancala_rl/
-  engine.py      immutable game state; reset / legal_moves / step
-  bots.py        RandomBot, GreedyBot (the baselines)
-  evaluate.py    match harness: win rate + 95% CI, seat-swapped
-scripts/
-  run_baselines.py   prints the reference table below
-tests/
-  test_engine.py     correctness tests for the engine port
+mancala_rl/        the library
+  engine.py        game rules; immutable state (reset / legal_moves / step)
+  features.py      board encoding (perspective-canonical)
+  network.py       policy + value MLP
+  mcts.py          MCTS, with terminal-proof propagation (MCTS-Solver)
+  gumbel.py        Gumbel AlphaZero search (explored alternative)
+  classical.py     no-network MCTS (for the ablation)
+  bots.py          random and 1-ply greedy baselines
+  selfplay.py      self-play data generation
+  training.py      one training step
+  evaluate.py      match harness (win rate + 95% CI, seat-swapped)
+  csolver.py       Python wrapper for the C solver
+  reference.py     brute-force minimax (test oracle)
+csolver/           the exact solver in C (alpha-beta + transposition table)
+scripts/           entry points: train, tournament, play, verify_solution, ...
+tests/             correctness tests
 ```
 
-The engine API is side-effect free. `step(state, action)` returns
-`(next_state, reward, done, info)` with extra turns and captures handled
-internally, and a **sparse** reward (0 every move, then +1/-1/0 at the end,
-from the moving player's perspective). Actions are pit indices 0-5 for the
-side whose turn it is.
-
-## How to run
-
-From the repo root (standard library only, nothing to install for Stage 1):
+## Run it
 
 ```sh
-python tests/test_engine.py            # engine correctness checks
-python scripts/run_baselines.py        # the reference table
-python scripts/run_baselines.py --games 5000 --seed 1   # more games / new seed
+pip install -r requirements.txt
+powershell csolver/build.ps1                  # build the C solver (needs gcc)
+python scripts/train.py --out runs            # train by self-play
+python scripts/tournament.py --classical      # Elo tournament + the ablation
+python scripts/play.py                         # play it yourself, in the terminal
+python scripts/verify_solution.py --max-n 4   # confirm the solved game value
 ```
-
-## Results
-
-The harness plays a fixed number of games and reports the first agent's win
-rate with a 95% Wilson confidence interval. Seats are swapped every other game,
-so first-move advantage cannot skew the result. `score` counts draws as half a
-win, which is the right number to read for the mirror matches.
-
-`python scripts/run_baselines.py --games 2000 --seed 0`:
-
-| Matchup            | Win rate | 95% CI          | Score | W / L / D       |
-|--------------------|---------:|-----------------|------:|-----------------|
-| Random vs Random   |   48.1%  | [45.9%, 50.3%]  | 51.1% | 962 / 917 / 121 |
-| Greedy vs Greedy   |   45.0%  | [42.8%, 47.2%]  | 49.5% | 900 / 920 / 180 |
-| Greedy vs Random   |   93.8%  | [92.6%, 94.7%]  | 94.6% | 1875 / 92 / 33  |
-
-Reading the table:
-
-- The two mirror matches sit at ~50% on score, which confirms the harness is
-  fair: with identical players, swapping seats leaves neither side an edge.
-- **Greedy beats Random ~94% of the time.** That is the reference line. A
-  learning agent that cannot clear this has not learned anything a one-ply
-  heuristic doesn't already know.
 
 ## What I learned
 
-The first version of this project trained a Deep SARSA agent that never beat
-its own greedy opponent. Four reasons, each fixed by construction in this
-rebuild:
+The first version (Deep SARSA) never beat greedy. Four causes, each fixed by
+construction here:
 
-1. **Misaligned transitions.** It learned from the board right after its own
-   move, before the opponent replied — but the state it actually faces next is
-   the one *after* the opponent moves. (Stage 2+ records transitions aligned to
-   the next state the acting player sees.)
-2. **The reward was the greedy heuristic.** It got ±1 per move on the store
-   differential, so the best it could do was imitate greedy. This rebuild uses
-   a sparse win/loss reward instead, so the agent optimizes the actual game
-   outcome.
-3. **One fixed opponent.** It only ever saw a single deterministic bot, so it
-   only ever saw a sliver of the state space.
-4. **No normalization, no replay buffer, no target network.**
+1. **Misaligned transitions** — it learned from the board right after its own
+   move, not the state it actually faces next.
+2. **The reward was the greedy heuristic** — ±1 per move on the store
+   differential, so the best it could do was imitate greedy. This rebuild
+   rewards the real game outcome.
+3. **One fixed opponent** — it saw a sliver of the state space; self-play covers
+   far more.
+4. **No replay buffer, normalization, or search.**
 
-The remaining sections of this README — a training curve and a results table
-for the learning agent vs Random and vs Greedy — will be filled in as those
-stages land.
+And one lesson learned later, the hard way: for a *scored* game, predict the
+**score**, not just win/loss — and measure against ground truth (an Elo field,
+the solved value), because the right metric is what finally made the picture
+clear.

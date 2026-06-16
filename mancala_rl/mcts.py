@@ -5,18 +5,18 @@ policy seeds the priors and its value replaces the rollout. Each simulation
 selects down the tree by PUCT, expands one leaf (evaluating it with the net, or
 reading the exact result if it's terminal), and backs the value up the path.
 
-The one subtlety worth stating: values are stored in an *absolute*
-(player-1) frame. A node interprets a value from its own player's perspective
-by flipping the sign when its player isn't player 1. Because the sign depends on
-*who* is to move rather than on depth parity, the extra-turn rule (same player
-moves twice) is handled correctly for free -- no negamax assumption.
+One subtlety: values are stored in an *absolute* (player-1) frame. A node reads a
+value from its own player's perspective by flipping the sign when its player
+isn't player 1. Because the sign depends on *who* is to move rather than on depth
+parity, the extra-turn rule (the same player moving twice) is handled correctly
+for free -- no negamax assumption.
 
-On top of that we run a score-free MCTS-Solver (Winands & Bjornsson, 2008):
-terminal positions are *proven* wins/losses/draws, and those proofs propagate up
-the tree (min/max keyed on the mover, in the same absolute frame). The search
-then takes a proven win when it sees one and never walks into a proven loss, so
-the agent plays the part of the game it can see to the end *exactly* instead of
-only averaging playouts -- which is where won endgames were being thrown away.
+I also run a score-free MCTS-Solver (Winands & Bjornsson, 2008): terminal
+positions are *proven* wins/losses/draws, and those proofs propagate up the tree
+(min/max keyed on the mover, in the same absolute frame). The search then takes a
+proven win when it sees one and never walks into a proven loss, so it plays the
+end of the game exactly rather than only averaging playouts -- the part where the
+agent used to throw away won endgames.
 """
 
 import math

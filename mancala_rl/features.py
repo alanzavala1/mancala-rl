@@ -1,10 +1,11 @@
-"""Board encoding for the learning agent.
+"""Board encoding for the network.
 
-The network always sees the position from the perspective of the player to move
-("my pits, my store, opponent's pits, opponent's store"), normalized to [0, 1].
-Perspective-canonical encoding means the network learns one representation
-regardless of which physical side is to move, and the 6 action slots always
-refer to "my" pits. Normalizing fixes one of v1's problems (raw seed counts).
+The network always sees the board from the perspective of the player to move
+("my pits, my store, opponent's pits, opponent's store"). I encode it this way
+so the network learns a single representation no matter which physical side is to
+move, and so the six action slots always mean "my" pits. The counts are scaled
+(see _SCALE) rather than fed raw -- feeding raw seed counts was one of v1's
+mistakes.
 """
 
 from . import engine
@@ -12,20 +13,21 @@ from . import engine
 NUM_FEATURES = 14
 NUM_ACTIONS = 6
 
-# Counts are scaled by the starting seeds per pit, so 1.0 == a full starting pit
-# and the network sees seed counts at near-integer resolution. Dividing by the
-# 48-seed total instead (the old choice) squashed every count into [0, ~0.5], so
-# the 1-vs-2-seed distinctions that decide captures and extra turns differed by
-# only ~0.02 -- this keeps that resolution.
+# Scale each count by the starting seeds per pit, so a full starting pit reads as
+# 1.0 and the network sees counts at near-integer resolution. The obvious
+# alternative, dividing by the 48-seed total, squashes everything into [0, ~0.5]:
+# the gap between 1 and 2 seeds -- which decides captures and extra turns --
+# shrinks to about 0.02, too small for the network to use.
 _SCALE = engine.STARTING_SEEDS  # 4
 
-# Value target = the FINAL store margin from the mover's view, squashed to
-# [-1, 1]. Unlike a plain win/loss label this keeps a learning signal alive in a
-# first-player-win game (the margin still varies once every game is a P1 win) and
-# rewards decisive, safe conversion over knife-edge wins. The margin is the final
-# score only -- never a per-move reward, which was v1's mistake (it just imitated
-# greedy). MARGIN_SCALE controls resolution: a margin of this size maps to 1.0,
-# so close games (where conversion actually matters) keep full resolution.
+# Value target: the final store margin, from the mover's view, squashed to
+# [-1, 1]. I train on the margin rather than a plain win/loss bit because in a
+# first-player-win game every decent agent wins, so a win/loss target saturates
+# and stops teaching; the margin keeps varying, so there is always a gradient,
+# and it pushes the agent to convert a won game decisively instead of by one
+# seed. This is the *final* score only, never a per-move reward -- rewarding the
+# per-move store difference is exactly what made v1 imitate greedy.
+# MARGIN_SCALE sets the scale: a final margin of MARGIN_SCALE maps to 1.0.
 MARGIN_SCALE = 16
 
 

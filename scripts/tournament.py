@@ -14,8 +14,8 @@ algorithms so the number means something relative to a spread of strategies:
 Every pairing is split by seat, so you can see each agent's score as player 1
 vs as player 2. Three matrices plus the ratings are written to --out as CSV.
 
-    .venv\\Scripts\\python scripts/tournament.py --champion runs_v5/best.pt
-    .venv\\Scripts\\python scripts/tournament.py --champion runs_v5/best.pt --games 50 --out runs_tournament
+    .venv\\Scripts\\python scripts/tournament.py --champion runs/best.pt
+    .venv\\Scripts\\python scripts/tournament.py --champion runs/best.pt --games 50 --classical
 """
 
 import argparse
