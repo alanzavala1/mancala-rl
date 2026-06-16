@@ -43,7 +43,7 @@ def latency_us(bot, reps):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--champion", default="runs_final/best.pt")
+    p.add_argument("--champion", default="runs/best.pt")
     p.add_argument("--games", type=int, default=200)
     p.add_argument("--sims", type=int, nargs="+",
                    default=[0, 1, 2, 4, 8, 16, 32, 64, 128, 256])

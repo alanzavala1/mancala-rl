@@ -30,7 +30,7 @@ from mancala_rl.evaluate import play_game
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--champion", default="runs/champion.pt")
+    p.add_argument("--champion", default="runs/best.pt")
     p.add_argument("--games", type=int, default=40, help="games per seat per depth")
     p.add_argument("--sims", type=int, default=100)
     p.add_argument("--depths", type=int, nargs="+", default=[4, 6, 8, 10, 12])

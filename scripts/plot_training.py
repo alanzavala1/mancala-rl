@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--log", default="runs_final/training_log.csv")
+    p.add_argument("--log", default="runs/training_log.csv")
     p.add_argument("--out", default="assets/training_curve.png")
     p.add_argument("--solver-games", type=int, default=40)
     p.add_argument("--solver-depth", type=int, default=8)

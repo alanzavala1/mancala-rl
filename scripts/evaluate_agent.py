@@ -26,7 +26,7 @@ from mancala_rl.evaluate import evaluate
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--champion", default="runs/champion.pt")
+    p.add_argument("--champion", default="runs/best.pt")
     p.add_argument("--games", type=int, default=400)
     p.add_argument("--sims", type=int, default=100, help="agent MCTS simulations")
     p.add_argument("--solver-depth", type=int, default=8)

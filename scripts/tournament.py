@@ -91,7 +91,7 @@ def write_matrix_csv(path, names, matrix):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--champion", default="runs_v5/best.pt")
+    ap.add_argument("--champion", default="runs/best.pt")
     ap.add_argument("--games", type=int, default=30, help="games per seat per pairing")
     ap.add_argument("--sims", type=int, default=800, help="MCTS simulations for our agent")
     ap.add_argument("--depths", type=int, nargs="+", default=[4, 6, 8, 10],
