@@ -12,8 +12,8 @@ solver used as a correctness check and benchmark opponent, tournament scripts,
 ablation experiments that remove one component at a time, and saved result
 tables under `results/`.
 
-And if you would rather skip the reading: it learned to beat alpha-beta search
-to depth 10, and you can [play it in your terminal](#play-against-it) right now.
+You can also play the agent yourself in the terminal. See
+[Play Against It](#play-against-it).
 
 ## The Game
 
@@ -130,22 +130,19 @@ MCTS stayed well ahead of no-network MCTS baselines.
 | Classical MCTS, greedy rollouts, 800 simulations | 1617 | 60.8% |
 | Classical MCTS, random rollouts, 800 simulations | 1558 | 53.9% |
 
-### A bonus round: the action-aware model
+### Action-Aware Experiment
 
-For a final experiment I built a heavier "action-aware" network. Same self-play,
-same MCTS, but instead of judging moves from the board alone, the policy head is
-handed exact one-ply consequences for each legal move: how many seeds it banks,
-whether it earns an extra turn, whether it ends the game, the resulting margin,
-and how many seeds are left. In effect the network gets a peek at what each move
-actually does before it ranks them.
+For a final experiment I built a larger "action-aware" network. It uses the same
+self-play and MCTS, but the policy head is given exact one-ply information about
+each legal move: how many seeds it banks, whether it earns an extra turn, whether
+it ends the game, the resulting margin, and how many seeds are left on the board.
 
-The interesting part is *where* that peek helps. Those features re-encode the
-same one-ply lookahead that MCTS already does for itself, so the payoff shows up
-in two specific places: the search-less raw network (which otherwise can't look
-ahead at all) gets noticeably sharper, and the full agent makes fewer big
-blunders — its average regret against the exact solver drops from 2.75 to 2.17
-seeds. The result is a stronger player, and the gains land exactly where you'd
-want them: against the toughest opponents.
+These features describe the same one-ply lookahead that MCTS already does on its
+own, so the improvement shows up in two places. The raw network, which has no
+search, gets better because it can now see one move ahead. The full agent makes
+fewer large mistakes: its average regret against the exact solver drops from 2.75
+to 2.17 seeds. The result is a stronger agent, with the largest gains against the
+strongest opponents.
 
 Head-to-head score against each opponent, with 95% confidence intervals
 (Wilson), at 100 games per seat (n = 200 per cell), seat-swapped:
@@ -159,13 +156,13 @@ Head-to-head score against each opponent, with 95% confidence intervals
 | No-net MCTS, random rollouts | 78.5% [72.3–83.6] | **86.5%** [81.1–90.6] | +8.0 |
 | No-net MCTS, greedy rollouts | 77.2% [70.9–82.5] | 78.7% [72.5–83.8] | +1.5 |
 
-Every single matchup favors the action-aware model, and the biggest margins are
-on the hardest opponents — depth-6 search, depth-10 search, and the random-rollout
-MCTS. At 200 games per cell the individual intervals still overlap a little, so no
-one row is a knockout on its own, but six independent matchups all pointing the
-same way is the real signal that the features help.
+The action-aware model scores higher against every opponent, and the largest
+gains are against the hardest ones: depth-6 search, depth-10 search, and the
+random-rollout MCTS. At 200 games per cell the individual intervals still overlap
+a little, so no single row is conclusive on its own. The stronger evidence is
+that all six matchups move in the same direction.
 
-And the honest price of that strength:
+The cost of that strength:
 
 | Cost | Foundational MLP | Action-aware | Change |
 |---|---:|---:|---:|
@@ -173,11 +170,11 @@ And the honest price of that strength:
 | Training wall time | 0.79 h | 3.27 h | 4.1x |
 | MCTS-800 move latency | 0.069 s | 0.127 s | 1.8x |
 
-So the action-aware model is the stronger player, but it costs roughly 4x the
-training and 2x the thinking time. That tradeoff is exactly why the small MLP is
-still the headline: it captures most of the strength at a fraction of the size.
-The bonus model shows how much further hand-built features can push the agent —
-and, just as usefully, where they stop earning their keep.
+So the action-aware model is the stronger player, but it takes about 4x the
+training time and 2x the time per move. That is why the small MLP is still the
+headline result: it gives most of the strength for a fraction of the size. The
+larger model shows how far hand-built features can push the agent, and also where
+the extra effort stops paying off.
 
 The full run directories are too large to commit, but the compact CSV summaries
 are saved under `results/`. These numbers should be read as project-scale
@@ -191,18 +188,18 @@ important.
 
 ## Play Against It
 
-Numbers are one thing — go play it. The agent lives in your terminal:
+You can play the agent in your terminal:
 
 ```sh
-python scripts/play.py                                       # you first, small MLP, 256-sim search
-python scripts/play.py --champion runs_action_aware/best.pt  # take on the heavier action-aware model
-python scripts/play.py --seat 2 --sims 800                   # let it open, and make it think hard
+python scripts/play.py                                       # you move first, small MLP, 256-sim search
+python scripts/play.py --champion runs_action_aware/best.pt  # play the larger action-aware model
+python scripts/play.py --seat 2 --sims 800                   # let it move first, with more search
 ```
 
-You sow a pit by typing its letter. The agent replies, and — this is the fun
-part — after each of its moves it tells you how it rates the position, so you can
-watch its confidence climb or sink as the board turns. Here it swings from "even"
-to "ahead" over two moves, grabbing an extra turn along the way:
+Type the letter of a pit to sow it. After each of its moves the agent prints how
+it rates the position from its own point of view, so you can see whether it
+thinks it is ahead or behind. In the game below it goes from "even" to "ahead"
+over two moves and picks up an extra turn:
 
 ```text
 Agent plays J.
@@ -223,12 +220,12 @@ Agent plays G.
         A    B    C    D    E    F
 ```
 
-Fair warning: Kalah(6, 4) is a first-player win and the agent plays the endgame
-exactly (that's the MCTS-Solver), so if you hand it an early lead it will not
-give it back. Beating it from the second seat is the real challenge. Good luck.
+Kalah(6, 4) is a first-player win, and the agent plays the endgame exactly with
+the MCTS-Solver, so it rarely gives back an early lead. Beating it from the
+second seat is harder.
 
 > Trained checkpoints are not committed (they are large and gitignored), so
-> `--champion` points at a model you have trained yourself — see
+> `--champion` points at a model you have trained yourself. See
 > [Common Commands](#common-commands).
 
 ## What Mattered Most
