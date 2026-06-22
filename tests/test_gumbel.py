@@ -19,6 +19,11 @@ def _net():
     return MancalaNet().eval()
 
 
+def _action_aware_net():
+    torch.manual_seed(0)
+    return MancalaNet(architecture="action_aware").eval()
+
+
 # Player 1 to move; B (action 1) lands in empty C, captures opposite, ends the
 # game with player 1 ahead -> a forced win in one. Same position as test_mcts.
 _FORCED_WIN = State((1, 1, 0, 0, 0, 0, 0,
@@ -53,6 +58,14 @@ def test_gumbel_single_legal_move():
     action, policy, _ = g.search(s)
     assert action == 5
     assert policy[5] == 1.0
+
+
+def test_action_aware_gumbel_runs_search():
+    g = GumbelMCTS(_action_aware_net(), torch.device("cpu"),
+                   n_simulations=16, rng=random.Random(3))
+    action, policy, _ = g.search(engine.reset())
+    assert action in engine.legal_moves(engine.reset())
+    assert abs(sum(policy) - 1.0) < 1e-6
 
 
 def _run_all():

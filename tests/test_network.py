@@ -5,11 +5,13 @@
 """
 
 import sys
+import pathlib
+import tempfile
 
 import torch
 
 from mancala_rl import engine, features
-from mancala_rl.network import MancalaNet, default_device, encode_batch
+from mancala_rl.network import MancalaNet, default_device, encode_batch, load_net, save_net
 
 
 def _some_states():
@@ -49,6 +51,46 @@ def test_eval_is_deterministic():
         l1, v1 = net(x)
         l2, v2 = net(x)
     assert torch.allclose(l1, l2) and torch.allclose(v1, v2)
+
+
+def test_residual_layer_norm_forward_shapes():
+    device = default_device()
+    net = MancalaNet(hidden=64, layers=3, residual=True, layer_norm=True).to(device).eval()
+    x = encode_batch(_some_states(), device)
+    with torch.no_grad():
+        logits, value = net(x)
+    assert logits.shape == (len(_some_states()), features.NUM_ACTIONS)
+    assert value.shape == (len(_some_states()),)
+
+
+def test_action_aware_forward_shapes():
+    device = default_device()
+    net = MancalaNet(hidden=64, layers=2, architecture="action_aware").to(device).eval()
+    states = _some_states()
+    x = encode_batch(states, device, architecture="action_aware")
+    assert x.shape == (len(states), features.ACTION_AWARE_FEATURES)
+    with torch.no_grad():
+        logits, value = net(x)
+    assert logits.shape == (len(states), features.NUM_ACTIONS)
+    assert value.shape == (len(states),)
+
+
+def test_save_load_preserves_architecture_and_value_metadata():
+    net = MancalaNet(hidden=64, layers=3, residual=True, layer_norm=True,
+                     architecture="action_aware")
+    net.value_mode = "tanh"
+    net.value_scale = 12.0
+    with tempfile.TemporaryDirectory() as d:
+        path = pathlib.Path(d) / "net.pt"
+        save_net(net, path)
+        loaded = load_net(path)
+    assert loaded.hidden == 64
+    assert loaded.layers == 3
+    assert loaded.residual is True
+    assert loaded.layer_norm is True
+    assert loaded.architecture == "action_aware"
+    assert loaded.value_mode == "tanh"
+    assert loaded.value_scale == 12.0
 
 
 def _run_all():

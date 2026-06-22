@@ -44,6 +44,43 @@ def test_to_move_half_comes_first():
     assert vec[0:7] == expected_mine
 
 
+def test_value_target_modes():
+    assert features.value_target(32, mode="clip", scale=16) == 1.0
+    assert features.value_target(-32, mode="clip", scale=16) == -1.0
+    assert features.value_target(8, mode="clip", scale=16) == 0.5
+    assert 0.0 < features.value_target(8, mode="tanh", scale=16) < 1.0
+
+
+def test_action_features_capture_real_move_consequences_for_player_one():
+    # F has one seed, so it lands in player 1's store and earns another move.
+    state = State((1, 0, 0, 0, 0, 1, 0,
+                   1, 1, 1, 1, 1, 1, 0), 1)
+    rows = features.action_features(state)
+    assert len(rows) == features.NUM_ACTIONS
+    assert all(len(row) == features.ACTION_FEATURES for row in rows)
+    assert rows[5][0] == 1.0
+    assert rows[5][2] > 0.0
+    assert rows[5][3] == 1.0
+    assert rows[1] == [0.0] * features.ACTION_FEATURES
+
+
+def test_action_features_respect_player_two_sowing_geometry():
+    # G has one seed, and for player 2 that seed lands directly in store 2.
+    state = State((1, 1, 1, 1, 1, 1, 0,
+                   1, 1, 0, 0, 0, 0, 0), 2)
+    rows = features.action_features(state)
+    assert rows[0][0] == 1.0
+    assert rows[0][2] > 0.0
+    assert rows[0][3] == 1.0
+
+
+def test_action_aware_encoding_extends_base_encoding():
+    state = engine.reset()
+    vec = features.encode_action_aware(state)
+    assert len(vec) == features.ACTION_AWARE_FEATURES
+    assert vec[:features.NUM_FEATURES] == features.encode(state)
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = 0

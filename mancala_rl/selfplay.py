@@ -26,7 +26,8 @@ from . import engine, features
 from .mcts import visit_counts
 
 
-def play_game(mcts, rng=None, temperature_moves=10, random_opening=0, max_plies=400):
+def play_game(mcts, rng=None, temperature_moves=10, random_opening=0,
+              max_plies=400, value_mode="clip", value_scale=features.MARGIN_SCALE):
     """Play one self-play game.
 
     Returns a list of (features, policy_target, value) examples, one per move.
@@ -37,6 +38,7 @@ def play_game(mcts, rng=None, temperature_moves=10, random_opening=0, max_plies=
     """
     rng = rng or random.Random()
     state = engine.reset(first_player=1)
+    architecture = getattr(mcts.net, "architecture", "mlp")
 
     for _ in range(rng.randint(0, random_opening)):
         state, _, done, _ = engine.step(state, rng.choice(engine.legal_moves(state)))
@@ -55,7 +57,8 @@ def play_game(mcts, rng=None, temperature_moves=10, random_opening=0, max_plies=
         policy_target = [0.0] * features.NUM_ACTIONS
         for action, n in counts.items():
             policy_target[action] = n / total
-        history.append((features.encode(state), policy_target, state.current_player))
+        history.append((features.encode_for_model(state, architecture),
+                        policy_target, state.current_player))
 
         actions = list(counts)
         weights = [counts[a] for a in actions]
@@ -78,16 +81,19 @@ def play_game(mcts, rng=None, temperature_moves=10, random_opening=0, max_plies=
     examples = []
     for feat, policy_target, player in history:
         mover_margin = final_margin if player == 1 else -final_margin
-        examples.append((feat, policy_target, features.margin_value(mover_margin)))
+        examples.append((feat, policy_target,
+                         features.value_target(mover_margin, value_mode, value_scale)))
     return examples
 
 
-def generate(mcts, n_games, rng=None, temperature_moves=10, random_opening=0):
+def generate(mcts, n_games, rng=None, temperature_moves=10, random_opening=0,
+             value_mode="clip", value_scale=features.MARGIN_SCALE):
     """Play n_games of self-play; return all examples concatenated."""
     rng = rng or random.Random()
     examples = []
     for _ in range(n_games):
-        examples.extend(play_game(mcts, rng, temperature_moves, random_opening))
+        examples.extend(play_game(mcts, rng, temperature_moves, random_opening,
+                                  value_mode=value_mode, value_scale=value_scale))
     return examples
 
 
@@ -100,31 +106,40 @@ def _selfplay_worker(payload):
     from .network import MancalaNet
     from .mcts import MCTS
 
-    (state_dict, hidden, layers, n_games, sims, dirichlet,
-     temp_moves, random_opening, seed) = payload
+    (state_dict, hidden, layers, residual, layer_norm, architecture, n_games,
+     sims, c_puct, dirichlet, temp_moves, random_opening, value_mode,
+     value_scale, seed) = payload
     _torch.set_num_threads(1)            # one thread per worker; parallelism is by process
     _random.seed(seed)
     _np.random.seed(seed % (2 ** 32 - 1))
     _torch.manual_seed(seed)
 
-    net = MancalaNet(hidden=hidden, layers=layers)
+    net = MancalaNet(hidden=hidden, layers=layers,
+                     residual=residual, layer_norm=layer_norm,
+                     architecture=architecture)
     net.load_state_dict(state_dict)
     net.eval()
-    mcts = MCTS(net, _torch.device("cpu"), n_simulations=sims, dirichlet_alpha=dirichlet)
+    mcts = MCTS(net, _torch.device("cpu"), n_simulations=sims,
+                c_puct=c_puct, dirichlet_alpha=dirichlet, value_mode=value_mode,
+                value_scale=value_scale)
     return generate(mcts, n_games, rng=_random.Random(seed),
-                    temperature_moves=temp_moves, random_opening=random_opening)
+                    temperature_moves=temp_moves, random_opening=random_opening,
+                    value_mode=value_mode, value_scale=value_scale)
 
 
-def generate_parallel(executor, state_dict, hidden, layers, n_games, n_workers, sims,
-                      dirichlet, temp_moves, random_opening, base_seed):
+def generate_parallel(executor, state_dict, hidden, layers, residual, layer_norm,
+                      architecture, n_games, n_workers, sims, dirichlet,
+                      c_puct, temp_moves, random_opening, value_mode,
+                      value_scale, base_seed):
     """Self-play spread across worker processes via a ProcessPoolExecutor.
 
     state_dict must hold CPU tensors. Returns all examples concatenated.
     """
     per = [n_games // n_workers + (1 if i < n_games % n_workers else 0)
            for i in range(n_workers)]
-    payloads = [(state_dict, hidden, layers, per[i], sims, dirichlet, temp_moves,
-                 random_opening, base_seed * 100003 + i * 7919)
+    payloads = [(state_dict, hidden, layers, residual, layer_norm, architecture,
+                 per[i], sims, c_puct, dirichlet, temp_moves, random_opening,
+                 value_mode, value_scale, base_seed * 100003 + i * 7919)
                 for i in range(n_workers) if per[i] > 0]
     examples = []
     for chunk in executor.map(_selfplay_worker, payloads):
@@ -134,11 +149,13 @@ def generate_parallel(executor, state_dict, hidden, layers, n_games, n_workers, 
 
 # --- Gumbel AlphaZero self-play (isolated; uses gumbel.GumbelMCTS) -----------
 
-def play_game_gumbel(gmcts, random_opening=0, max_plies=400):
+def play_game_gumbel(gmcts, random_opening=0, max_plies=400,
+                     value_mode="clip", value_scale=features.MARGIN_SCALE):
     """One self-play game using Gumbel search. The policy target is the search's
     improved (completed-Q) policy; the value target is the final margin."""
     rng = gmcts.rng
     state = engine.reset(first_player=1)
+    architecture = getattr(gmcts.net, "architecture", "mlp")
     for _ in range(rng.randint(0, random_opening)):
         state, _, done, _ = engine.step(state, rng.choice(engine.legal_moves(state)))
         if done:
@@ -148,7 +165,8 @@ def play_game_gumbel(gmcts, random_opening=0, max_plies=400):
     history = []
     for _ in range(max_plies):
         action, policy, _ = gmcts.search(state)
-        history.append((features.encode(state), policy, state.current_player))
+        history.append((features.encode_for_model(state, architecture),
+                        policy, state.current_player))
         state, _, done, _ = engine.step(state, action)
         if done:
             break
@@ -158,14 +176,17 @@ def play_game_gumbel(gmcts, random_opening=0, max_plies=400):
     examples = []
     for feat, policy, player in history:
         mover_margin = final_margin if player == 1 else -final_margin
-        examples.append((feat, policy, features.margin_value(mover_margin)))
+        examples.append((feat, policy,
+                         features.value_target(mover_margin, value_mode, value_scale)))
     return examples
 
 
-def generate_gumbel(gmcts, n_games, random_opening=0):
+def generate_gumbel(gmcts, n_games, random_opening=0,
+                    value_mode="clip", value_scale=features.MARGIN_SCALE):
     examples = []
     for _ in range(n_games):
-        examples.extend(play_game_gumbel(gmcts, random_opening=random_opening))
+        examples.extend(play_game_gumbel(gmcts, random_opening=random_opening,
+                                         value_mode=value_mode, value_scale=value_scale))
     return examples
 
 
@@ -176,25 +197,32 @@ def _gumbel_worker(payload):
     from .network import MancalaNet
     from .gumbel import GumbelMCTS
 
-    (state_dict, hidden, layers, n_games, sims, m, random_opening, seed) = payload
+    (state_dict, hidden, layers, residual, layer_norm, architecture, n_games,
+     sims, m, c_puct, random_opening, value_mode, value_scale, seed) = payload
     _torch.set_num_threads(1)
     _random.seed(seed)
     _np.random.seed(seed % (2 ** 32 - 1))
     _torch.manual_seed(seed)
 
-    net = MancalaNet(hidden=hidden, layers=layers)
+    net = MancalaNet(hidden=hidden, layers=layers,
+                     residual=residual, layer_norm=layer_norm,
+                     architecture=architecture)
     net.load_state_dict(state_dict)
     net.eval()
     g = GumbelMCTS(net, _torch.device("cpu"), n_simulations=sims, m=m,
-                   rng=_random.Random(seed))
-    return generate_gumbel(g, n_games, random_opening)
+                   c_puct=c_puct, rng=_random.Random(seed), value_mode=value_mode,
+                   value_scale=value_scale)
+    return generate_gumbel(g, n_games, random_opening, value_mode, value_scale)
 
 
-def generate_gumbel_parallel(executor, state_dict, hidden, layers, n_games, n_workers,
-                             sims, m, random_opening, base_seed):
+def generate_gumbel_parallel(executor, state_dict, hidden, layers, residual,
+                             layer_norm, architecture, n_games, n_workers,
+                             sims, m, c_puct, random_opening, value_mode,
+                             value_scale, base_seed):
     per = [n_games // n_workers + (1 if i < n_games % n_workers else 0)
            for i in range(n_workers)]
-    payloads = [(state_dict, hidden, layers, per[i], sims, m, random_opening,
+    payloads = [(state_dict, hidden, layers, residual, layer_norm, architecture,
+                 per[i], sims, m, c_puct, random_opening, value_mode, value_scale,
                  base_seed * 100003 + i * 7919)
                 for i in range(n_workers) if per[i] > 0]
     examples = []

@@ -1,0 +1,13 @@
+agent,phase,n,optimal_rate,avg_regret,max_regret
+greedy,all,90,0.4889,7.6111,53.0000
+greedy,opening,30,0.1000,12.7333,46.0000
+greedy,midgame,30,0.5667,8.1333,53.0000
+greedy,endgame,30,0.8000,1.9667,39.0000
+mcts,all,90,0.7444,1.7556,39.0000
+mcts,opening,30,0.7000,1.3000,15.0000
+mcts,midgame,30,0.7667,1.6667,18.0000
+mcts,endgame,30,0.7667,2.3000,39.0000
+raw,all,90,0.7222,2.8000,47.0000
+raw,opening,30,0.6667,2.2667,15.0000
+raw,midgame,30,0.7333,3.9667,47.0000
+raw,endgame,30,0.7667,2.1667,39.0000

@@ -32,6 +32,11 @@ def _net():
     return MancalaNet().eval()
 
 
+def _action_aware_net():
+    torch.manual_seed(0)
+    return MancalaNet(architecture="action_aware").eval()
+
+
 def test_reference_confirms_the_win():
     # Sanity: action 1 really is (uniquely) optimal here.
     value = reference.minimax(_FORCED_WIN)
@@ -51,6 +56,13 @@ def test_visit_counts_are_well_formed():
     counts = visit_counts(root)
     assert set(counts) == set(engine.legal_moves(engine.reset()))
     assert sum(counts.values()) == 200      # one root edge visited per simulation
+
+
+def test_action_aware_mcts_runs_search():
+    mcts = MCTS(_action_aware_net(), torch.device("cpu"), n_simulations=25)
+    root = mcts.search(engine.reset())
+    counts = visit_counts(root)
+    assert set(counts) == set(engine.legal_moves(engine.reset()))
 
 
 def _run_all():

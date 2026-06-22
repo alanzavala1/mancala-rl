@@ -1,9 +1,12 @@
-"""Round-robin tournament across a pool of agents, with Elo and a seat split.
+"""Tournament across a pool of agents, with Elo and a seat split.
 
-The standard way to place an agent's strength: instead of fixating on one
-opponent, play everyone against everyone -- seat-swapped, with varied openings --
-and report a win-rate matrix plus Elo. The pool spans genuinely different
-algorithms so the number means something relative to a spread of strategies:
+By default this runs a full round-robin: every agent plays every other agent,
+seat-swapped, with varied openings. For fast model iteration, --schedule focused
+only plays the matchups involving the main network-guided agent. That preserves
+the headline evidence while skipping low-value baseline-vs-baseline games.
+
+The pool spans genuinely different algorithms so the number means something
+relative to a spread of strategies:
 
   - Random            -- the floor
   - Greedy            -- a 1-ply store-differential heuristic
@@ -16,6 +19,7 @@ vs as player 2. Three matrices plus the ratings are written to --out as CSV.
 
     .venv\\Scripts\\python scripts/tournament.py --champion runs/best.pt
     .venv\\Scripts\\python scripts/tournament.py --champion runs/best.pt --games 50 --classical
+    .venv\\Scripts\\python scripts/tournament.py --champion runs/best.pt --schedule focused --games 100
 """
 
 import argparse
@@ -56,22 +60,57 @@ def seat_score(p1, p2, games, opening_plies, rng):
     return s / games
 
 
-def fit_elo(score, games, anchor=1500.0, iters=5000):
+def fit_elo(score, games, anchor=1500.0, iters=5000, prior=0.5):
     """Bradley-Terry MLE (minorization-maximization), converted to Elo."""
     n = len(score)
     p = [1.0] * n
-    wins = [sum(score[i]) for i in range(n)]
+    wins = [
+        sum(score[i][j] + prior for j in range(n) if games[i][j] > 0)
+        for i in range(n)
+    ]
     for _ in range(iters):
         nxt = list(p)
         for i in range(n):
-            denom = sum(games[i][j] / (p[i] + p[j])
+            denom = sum((games[i][j] + 2 * prior) / (p[i] + p[j])
                         for j in range(n) if j != i and games[i][j] > 0)
-            if denom > 0 and wins[i] > 0:
+            if denom > 0:
                 nxt[i] = wins[i] / denom
         nxt = [max(x, 1e-12) for x in nxt]
         logmean = sum(math.log(x) for x in nxt) / n     # keep the scale anchored
         p = [x / math.exp(logmean) for x in nxt]
     return [anchor + 400.0 * math.log10(pi) for pi in p]
+
+
+def resolve_focus(names, requested, sims):
+    if requested:
+        if requested in names:
+            return names.index(requested)
+        raise SystemExit(f"--focus-agent must be one of: {', '.join(names)}")
+    return names.index(f"Net-mcts{sims}")
+
+
+def scheduled_pairs(names, schedule, focus_idx):
+    if schedule == "full":
+        return list(itertools.combinations(range(len(names)), 2))
+    if schedule == "focused":
+        return [(min(focus_idx, j), max(focus_idx, j))
+                for j in range(len(names)) if j != focus_idx]
+    raise ValueError(f"unknown schedule: {schedule}")
+
+
+def games_for_pair(name_a, name_b, default_games, baseline_games):
+    if baseline_games is None:
+        return default_games
+    if "Random" in (name_a, name_b) or "Greedy" in (name_a, name_b):
+        return min(default_games, baseline_games)
+    return default_games
+
+
+def weighted_mean_score(values, counts):
+    total = sum(counts)
+    if total == 0:
+        return None
+    return sum(v * c for v, c in zip(values, counts)) / total
 
 
 def write_matrix_csv(path, names, matrix):
@@ -97,6 +136,14 @@ def main():
                     help="random opening moves per game (variety/de-noising)")
     ap.add_argument("--classical", action="store_true",
                     help="add no-network MCTS (random + greedy rollouts) to ablate the net")
+    ap.add_argument("--schedule", choices=["full", "focused"], default="full",
+                    help="full round-robin or only matchups involving the focus agent")
+    ap.add_argument("--focus-agent", default=None,
+                    help="agent name used by --schedule focused; default is Net-mcts{sims}")
+    ap.add_argument("--baseline-games", type=int, default=None,
+                    help="games per seat for pairs containing Random or Greedy")
+    ap.add_argument("--elo-prior", type=float, default=0.5,
+                    help="small paired-game prior to keep sparse/lopsided Elo finite")
     ap.add_argument("--out", default="runs_tournament", help="directory for the CSV results")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cpu")
@@ -107,18 +154,26 @@ def main():
     pool = build_pool(net, device, args.sims, args.depths, classical=args.classical)
     names = [nm for nm, _ in pool]
     n = len(pool)
+    focus_idx = resolve_focus(names, args.focus_agent, args.sims)
+    pairs = scheduled_pairs(names, args.schedule, focus_idx)
     rng = random.Random(args.seed)
-    g = args.games
 
     # fp[i][j] = i's score rate when i is PLAYER 1 against j (as player 2).
     fp = [[None] * n for _ in range(n)]
-    print(f"\nround-robin: {n} agents, {g} games/seat/pair, "
-          f"{args.opening_plies} opening plies, agent sims={args.sims}\n", flush=True)
-    for i, j in itertools.combinations(range(n), 2):
+    seat_games = [[0] * n for _ in range(n)]
+    print(f"\n{args.schedule} tournament: {n} agents, {len(pairs)} pairings, "
+          f"{args.games} games/seat/pair, {args.opening_plies} opening plies, "
+          f"agent sims={args.sims}\n", flush=True)
+    for i, j in pairs:
+        g = games_for_pair(names[i], names[j], args.games, args.baseline_games)
         fp[i][j] = seat_score(pool[i][1], pool[j][1], g, args.opening_plies, rng)
+        seat_games[i][j] = g
         fp[j][i] = seat_score(pool[j][1], pool[i][1], g, args.opening_plies, rng)
+        seat_games[j][i] = g
+        game_note = f", {g}/seat" if g != args.games else ""
         print(f"  {names[i]:>13} vs {names[j]:<13}  "
-              f"P1 {fp[i][j]:5.1%}   (opp P1 {fp[j][i]:5.1%})", flush=True)
+              f"P1 {fp[i][j]:5.1%}   (opp P1 {fp[j][i]:5.1%})"
+              f"{game_note}", flush=True)
 
     # Derive the overall (seat-averaged) matrix and the Elo inputs.
     overall = [[None] * n for _ in range(n)]
@@ -126,19 +181,37 @@ def main():
     played = [[0] * n for _ in range(n)]
     for i in range(n):
         for j in range(n):
-            if i == j:
+            if i == j or fp[i][j] is None or fp[j][i] is None:
                 continue
-            i_as_p1 = fp[i][j] * g
-            i_as_p2 = (1.0 - fp[j][i]) * g       # i as player 2 when j led
+            gij = seat_games[i][j]
+            gji = seat_games[j][i]
+            i_as_p1 = fp[i][j] * gij
+            i_as_p2 = (1.0 - fp[j][i]) * gji       # i as player 2 when j led
             score_total[i][j] = i_as_p1 + i_as_p2
-            played[i][j] = 2 * g
-            overall[i][j] = (i_as_p1 + i_as_p2) / (2 * g)
+            played[i][j] = gij + gji
+            overall[i][j] = score_total[i][j] / played[i][j]
 
-    elos = fit_elo(score_total, played)
-    p1_rate = [sum(fp[i][j] for j in range(n) if j != i) / (n - 1) for i in range(n)]
-    p2_rate = [sum(1.0 - fp[j][i] for j in range(n) if j != i) / (n - 1) for i in range(n)]
-    overall_rate = [(p1_rate[i] + p2_rate[i]) / 2 for i in range(n)]
-    first_adv = sum(fp[i][j] for i in range(n) for j in range(n) if i != j) / (n * (n - 1))
+    elos = fit_elo(score_total, played, prior=args.elo_prior)
+    p1_rate = []
+    p2_rate = []
+    overall_rate = []
+    for i in range(n):
+        p1_values = [fp[i][j] for j in range(n) if fp[i][j] is not None]
+        p1_counts = [seat_games[i][j] for j in range(n) if fp[i][j] is not None]
+        p2_values = [1.0 - fp[j][i] for j in range(n) if fp[j][i] is not None]
+        p2_counts = [seat_games[j][i] for j in range(n) if fp[j][i] is not None]
+        p1 = weighted_mean_score(p1_values, p1_counts)
+        p2 = weighted_mean_score(p2_values, p2_counts)
+        both_values = p1_values + p2_values
+        both_counts = p1_counts + p2_counts
+        p1_rate.append(p1 if p1 is not None else 0.0)
+        p2_rate.append(p2 if p2 is not None else 0.0)
+        overall_rate.append(weighted_mean_score(both_values, both_counts) or 0.0)
+    first_scores = [fp[i][j] for i in range(n) for j in range(n)
+                    if fp[i][j] is not None]
+    first_counts = [seat_games[i][j] for i in range(n) for j in range(n)
+                    if fp[i][j] is not None]
+    first_adv = weighted_mean_score(first_scores, first_counts) or 0.0
 
     def show(title, mat):
         print(f"\n{title}\n")
@@ -146,7 +219,7 @@ def main():
         for i in range(n):
             row = f"{names[i]:>13} "
             for j in range(n):
-                row += f"{'--':>8}" if i == j else f"{mat[i][j]:>8.0%}"
+                row += f"{'--':>8}" if mat[i][j] is None else f"{mat[i][j]:>8.0%}"
             print(row)
 
     show("overall score matrix (row's score % vs column):", overall)
