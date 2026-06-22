@@ -17,7 +17,7 @@ import random
 import torch
 
 from . import engine
-from .features import NUM_ACTIONS, margin_value
+from .features import NUM_ACTIONS, value_target
 from .network import encode_batch
 
 
@@ -47,7 +47,8 @@ class GumbelMCTS:
     """Returns (action_to_play, improved_policy_target, root_value) from search."""
 
     def __init__(self, net, device, n_simulations=64, m=16,
-                 c_visit=50.0, c_scale=1.0, c_puct=1.5, rng=None):
+                 c_visit=50.0, c_scale=1.0, c_puct=1.5, rng=None,
+                 value_mode="clip", value_scale=16):
         self.net = net
         self.device = device
         self.n = n_simulations
@@ -56,10 +57,13 @@ class GumbelMCTS:
         self.c_scale = c_scale
         self.c_puct = c_puct
         self.rng = rng or random.Random()
+        self.value_mode = value_mode
+        self.value_scale = value_scale
+        self.architecture = getattr(net, "architecture", "mlp")
 
     def _eval(self, node):
         """Expand node; return (raw logits over legal, value from node.player's view)."""
-        x = encode_batch([node.state], self.device)
+        x = encode_batch([node.state], self.device, self.architecture)
         with torch.no_grad():
             logits, value = self.net(x)
         v = float(value[0])
@@ -103,7 +107,7 @@ class GumbelMCTS:
             node = self._child(node, a)
         if node.terminal:
             s1, s2 = engine.stores(node.state)
-            v_abs = margin_value(s1 - s2)
+            v_abs = value_target(s1 - s2, self.value_mode, self.value_scale)
         else:
             _, v = self._eval(node)
             v_abs = v if node.player == 1 else -v
@@ -161,9 +165,15 @@ class GumbelBot:
 
     name = "Gumbel"
 
-    def __init__(self, net, device=None, n_simulations=64, m=16):
+    def __init__(self, net, device=None, n_simulations=64, m=16,
+                 c_puct=1.5, value_mode=None, value_scale=None):
+        value_mode = value_mode or getattr(net, "value_mode", "clip")
+        value_scale = value_scale or getattr(net, "value_scale", 16)
         self.search = GumbelMCTS(net, device or torch.device("cpu"),
-                                 n_simulations=n_simulations, m=m).search
+                                 n_simulations=n_simulations, m=m,
+                                 c_puct=c_puct,
+                                 value_mode=value_mode,
+                                 value_scale=value_scale).search
 
     def act(self, state, rng):
         return self.search(state)[0]

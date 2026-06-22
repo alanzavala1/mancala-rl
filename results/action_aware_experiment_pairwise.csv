@@ -1,0 +1,7 @@
+comparison,opponent,foundational_mlp,action_aware_experiment,delta
+alpha_beta,AB-d4,0.767,0.805,0.038
+alpha_beta,AB-d6,0.745,0.843,0.098
+alpha_beta,AB-d8,0.675,0.723,0.048
+alpha_beta,AB-d10,0.578,0.652,0.074
+ablation,MCTSrand800,0.785,0.865,0.080
+ablation,MCTSgrdy800,0.772,0.787,0.015

@@ -5,6 +5,9 @@ description = "An AlphaZero-style self-play agent for the solved game Kalah."
 requires-python = ">=3.9"
 dependencies = ["numpy", "torch", "matplotlib"]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"

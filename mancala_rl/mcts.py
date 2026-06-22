@@ -24,7 +24,7 @@ import math
 import torch
 
 from . import engine
-from .features import NUM_ACTIONS, margin_value
+from .features import NUM_ACTIONS, value_target
 from .network import encode_batch
 
 
@@ -54,13 +54,17 @@ class _Node:
 
 class MCTS:
     def __init__(self, net, device, n_simulations=100, c_puct=1.5,
-                 dirichlet_alpha=None, dirichlet_frac=0.25):
+                 dirichlet_alpha=None, dirichlet_frac=0.25,
+                 value_mode="clip", value_scale=16):
         self.net = net
         self.device = device
         self.n_simulations = n_simulations
         self.c_puct = c_puct
         self.dirichlet_alpha = dirichlet_alpha   # set for self-play exploration
         self.dirichlet_frac = dirichlet_frac
+        self.value_mode = value_mode
+        self.value_scale = value_scale
+        self.architecture = getattr(net, "architecture", "mlp")
 
     def search(self, state):
         """Run the simulations and return the root node (carries visit counts)."""
@@ -74,7 +78,7 @@ class MCTS:
 
     def _expand(self, node):
         """Evaluate node with the net, set priors, return its absolute value."""
-        x = encode_batch([node.state], self.device)
+        x = encode_batch([node.state], self.device, self.architecture)
         with torch.no_grad():
             logits, value = self.net(x)
         v = float(value[0])                       # from node.player's perspective
@@ -103,7 +107,7 @@ class MCTS:
 
         if node.terminal:
             s1, s2 = engine.stores(node.state)     # margin-based terminal value (P1 frame)
-            v_abs = margin_value(s1 - s2)
+            v_abs = value_target(s1 - s2, self.value_mode, self.value_scale)
         else:
             v_abs = self._expand(node)
 
@@ -195,9 +199,13 @@ class MCTSBot:
 
     name = "MCTS"
 
-    def __init__(self, net, device=None, n_simulations=100, c_puct=1.5):
+    def __init__(self, net, device=None, n_simulations=100, c_puct=1.5,
+                 value_mode=None, value_scale=None):
+        value_mode = value_mode or getattr(net, "value_mode", "clip")
+        value_scale = value_scale or getattr(net, "value_scale", 16)
         self.mcts = MCTS(net, device or torch.device("cpu"),
-                         n_simulations, c_puct)
+                         n_simulations, c_puct, value_mode=value_mode,
+                         value_scale=value_scale)
 
     def act(self, state, rng):
         return best_action(self.mcts.search(state), rng)

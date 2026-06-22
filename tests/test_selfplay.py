@@ -20,6 +20,12 @@ def _mcts(sims=25):
     return MCTS(MancalaNet().eval(), torch.device("cpu"), n_simulations=sims)
 
 
+def _action_aware_mcts(sims=8):
+    torch.manual_seed(0)
+    net = MancalaNet(architecture="action_aware").eval()
+    return MCTS(net, torch.device("cpu"), n_simulations=sims)
+
+
 def test_examples_are_well_formed():
     examples = selfplay.play_game(_mcts(), rng=random.Random(0))
     assert len(examples) >= 1
@@ -50,6 +56,12 @@ def test_generate_concatenates_games():
     g1 = selfplay.play_game(mcts, rng=random.Random(2))
     total = selfplay.generate(mcts, n_games=3, rng=rng)
     assert len(total) >= len(g1)      # 3 games yield at least as much as 1
+
+
+def test_action_aware_selfplay_emits_extended_features():
+    examples = selfplay.play_game(_action_aware_mcts(), rng=random.Random(3))
+    assert examples
+    assert len(examples[0][0]) == features.ACTION_AWARE_FEATURES
 
 
 def _run_all():
