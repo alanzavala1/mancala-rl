@@ -1,11 +1,14 @@
-"""Play Kalah against the trained agent, in the terminal.
+"""Play Kalah against the trained agent, right in your terminal.
 
-    python scripts/play.py                       # you move first; agent searches 256 sims
-    python scripts/play.py --seat 2 --sims 400   # agent moves first; stronger agent
+    python scripts/play.py                                         # you go first vs the small MLP
+    python scripts/play.py --seat 2 --sims 400                     # let the agent open; crank the search
+    python scripts/play.py --champion runs_action_aware/best.pt    # take on the big action-aware model
 
 Type the letter of a pit on your side to sow it ('q' quits). Sowing goes
 counter-clockwise toward your store; landing your last seed in your own store
-earns another turn, and landing in one of your own empty pits captures.
+earns another turn, and landing in one of your own empty pits captures. After
+each of its moves the agent tells you how it rates its chances -- watch the
+number swing when you walk into (or dodge) a capture.
 """
 
 import argparse
@@ -37,8 +40,9 @@ def render(state, human_seat):
 
 def agent_favor(net, device, state, agent_seat):
     """Value-head read of the position, from the agent's fixed perspective."""
+    arch = getattr(net, "architecture", "mlp")        # encode for whichever net was loaded
     with torch.no_grad():
-        _, v = net(encode_batch([state], device))
+        _, v = net(encode_batch([state], device, arch))
     v = float(v[0])
     return v if state.current_player == agent_seat else -v
 

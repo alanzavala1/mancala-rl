@@ -53,6 +53,29 @@ LOG_HEADER = [
 ]
 
 
+def _log_stats_columns(new_stats, buffer_stats, args, random_opening_used, net,
+                       gate_score=""):
+    """The training-log columns after the per-eval head (LOG_HEADER[9:]).
+
+    Identical for eval and non-eval rows, so both branches build it here instead
+    of repeating the same ~20-column list. Order must match LOG_HEADER.
+    """
+    return [
+        f"{new_stats['opening']:.3f}", f"{new_stats['midgame']:.3f}",
+        f"{new_stats['endgame']:.3f}", f"{buffer_stats['opening']:.3f}",
+        f"{buffer_stats['midgame']:.3f}", f"{buffer_stats['endgame']:.3f}",
+        f"{buffer_stats['behind']:.3f}", f"{buffer_stats['close']:.3f}",
+        f"{buffer_stats['ahead']:.3f}",
+        f"{new_stats['entropy']:.3f}", f"{new_stats['abs_value']:.3f}",
+        f"{args.phase_balanced_frac:.3f}", f"{args.diverse_frac:.3f}",
+        f"{args.priority_frac:.3f}", args.priority_phase,
+        random_opening_used, args.value_mode, f"{args.value_scale:.3f}",
+        int(net.residual), int(net.layer_norm), net.architecture,
+        f"{args.c_puct:.3f}",
+        "" if gate_score == "" else f"{gate_score:.3f}",
+    ]
+
+
 def solver_seatsplit(agent, depth, n, seed, opening_plies=6):
     """(agent wins as first player, agent wins as second player) vs solver.
 
@@ -464,38 +487,19 @@ def main():
                       f"{gate_text}{'  << NEW BEST' if new_best else ''} | {dt:4.0f}s",
                       flush=True)
                 with open(csv_path, "a", newline="") as f:
-                    csv.writer(f).writerow(
-                        [it, len(buffer), f"{avg_loss:.4f}", f"{vr:.3f}", f"{vg:.3f}",
-                         sf, ss, int(new_best), f"{dt:.1f}",
-                         f"{new_stats['opening']:.3f}", f"{new_stats['midgame']:.3f}",
-                         f"{new_stats['endgame']:.3f}", f"{buffer_stats['opening']:.3f}",
-                         f"{buffer_stats['midgame']:.3f}", f"{buffer_stats['endgame']:.3f}",
-                         f"{buffer_stats['behind']:.3f}", f"{buffer_stats['close']:.3f}",
-                         f"{buffer_stats['ahead']:.3f}",
-                         f"{new_stats['entropy']:.3f}", f"{new_stats['abs_value']:.3f}",
-                         f"{args.phase_balanced_frac:.3f}", f"{args.diverse_frac:.3f}",
-                         f"{args.priority_frac:.3f}", args.priority_phase,
-                         random_opening_used, args.value_mode, f"{args.value_scale:.3f}",
-                         int(net.residual), int(net.layer_norm), net.architecture,
-                         f"{args.c_puct:.3f}",
-                         "" if gate_score == "" else f"{gate_score:.3f}"])
+                    head = [it, len(buffer), f"{avg_loss:.4f}", f"{vr:.3f}",
+                            f"{vg:.3f}", sf, ss, int(new_best), f"{dt:.1f}"]
+                    csv.writer(f).writerow(head + _log_stats_columns(
+                        new_stats, buffer_stats, args, random_opening_used, net,
+                        gate_score))
             else:
                 dt = time.perf_counter() - t0
                 print(f"iter {it:3d} | loss {avg_loss:5.3f} | {dt:4.0f}s", flush=True)
                 with open(csv_path, "a", newline="") as f:
-                    csv.writer(f).writerow(
-                        [it, len(buffer), f"{avg_loss:.4f}", "", "", "", "", "", f"{dt:.1f}",
-                         f"{new_stats['opening']:.3f}", f"{new_stats['midgame']:.3f}",
-                         f"{new_stats['endgame']:.3f}", f"{buffer_stats['opening']:.3f}",
-                         f"{buffer_stats['midgame']:.3f}", f"{buffer_stats['endgame']:.3f}",
-                         f"{buffer_stats['behind']:.3f}", f"{buffer_stats['close']:.3f}",
-                         f"{buffer_stats['ahead']:.3f}",
-                         f"{new_stats['entropy']:.3f}", f"{new_stats['abs_value']:.3f}",
-                         f"{args.phase_balanced_frac:.3f}", f"{args.diverse_frac:.3f}",
-                         f"{args.priority_frac:.3f}", args.priority_phase,
-                         random_opening_used, args.value_mode, f"{args.value_scale:.3f}",
-                         int(net.residual), int(net.layer_norm), net.architecture,
-                         f"{args.c_puct:.3f}", ""])
+                    head = [it, len(buffer), f"{avg_loss:.4f}", "", "", "", "", "",
+                            f"{dt:.1f}"]
+                    csv.writer(f).writerow(head + _log_stats_columns(
+                        new_stats, buffer_stats, args, random_opening_used, net))
             if args.checkpoint_every and (
                     it % args.checkpoint_every == 0 or it == args.iterations):
                 _save_checkpoint(
